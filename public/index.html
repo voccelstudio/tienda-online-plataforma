@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VOCCEL — Tienda de Ropa</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <button class="brand" data-nav="tienda">
+        <span class="brand-mark">V</span>
+        <span class="brand-name">VOCCEL</span>
+      </button>
+      <nav class="main-nav">
+        <button class="nav-link active" data-nav="tienda"><i class="fa-solid fa-store"></i> Tienda</button>
+        <button class="nav-link" data-nav="panel"><i class="fa-solid fa-chart-column"></i> Panel</button>
+      </nav>
+      <button class="icon-btn" id="cartBtn" title="Carrito">
+        <i class="fa-solid fa-bag-shopping"></i>
+        <span class="badge" id="cartCount" hidden>0</span>
+      </button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <div>
+        <strong>VOCCEL</strong> — Tienda online de ropa.
+        <span class="muted">El inventario se actualiza automáticamente con cada venta.</span>
+      </div>
+      <div>
+        <button class="link-btn" data-nav="panel"><i class="fa-solid fa-key"></i> Acceso al panel de administración</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Carrito -->
+  <div class="drawer-overlay" id="cartOverlay" hidden></div>
+  <aside class="drawer" id="cartDrawer" hidden>
+    <div class="drawer-head">
+      <h2>Tu carrito</h2>
+      <button class="icon-btn" data-close-cart><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="cartBody" class="drawer-body"></div>
+  </aside>
+
+  <!-- Modal producto -->
+  <div class="modal-overlay" id="productModal" hidden></div>
+  <div class="modal" id="productModalBox" hidden></div>
+
+  <!-- Modal detalle pedido (admin) -->
+  <div class="modal-overlay" id="orderModal" hidden></div>
+  <div class="modal modal-lg" id="orderModalBox" hidden></div>
+
+  <!-- Modal producto (admin) -->
+  <div class="modal-overlay" id="prodAdminModal" hidden></div>
+  <div class="modal modal-lg" id="prodAdminModalBox" hidden></div>
+
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/store.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

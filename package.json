@@ -1,0 +1,16 @@
+{
+  "name": "voccela-tienda",
+  "version": "1.0.0",
+  "description": "Tienda online de ropa VOCCEL con panel de administracion (stock, inventario, ventas, pedidos, delivery y reportes)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
