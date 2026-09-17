@@ -1,28 +1,33 @@
 const API = {
-  async get(url) {
-    const r = await fetch(url);
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Error de servidor');
-    return j;
+  async raw(method, url, body) {
+    const r = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined
+    });
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('json')) return { status: r.status, data: await r.json() };
+    throw new Error('NOT_JSON');
   },
-  async post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Error de servidor');
-    return j;
+
+  async request(method, url, body) {
+    try {
+      const { status, data } = await API.raw(method, url, body);
+      if (status < 200 || status >= 300) throw new Error(data.error || 'Error de servidor');
+      return data;
+    } catch (e) {
+      // Sin backend (GitHub Pages o servidor apagado) -> usar base local del navegador
+      if (e.message === 'NOT_JSON' || e instanceof TypeError || /fail|network|fetch|load/i.test(e.message)) {
+        if (typeof LocalDB !== 'undefined') return LocalDB.handle(method, url, body);
+      }
+      throw e;
+    }
   },
-  async put(url, body) {
-    const r = await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Error de servidor');
-    return j;
-  },
-  async del(url) {
-    const r = await fetch(url, { method: 'DELETE' });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || 'Error de servidor');
-    return j;
-  }
+
+  get(url) { return API.request('GET', url); },
+  post(url, body) { return API.request('POST', url, body); },
+  put(url, body) { return API.request('PUT', url, body); },
+  del(url) { return API.request('DELETE', url); }
 };
 
 const fmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'USD' });
