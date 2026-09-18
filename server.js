@@ -11,6 +11,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SHIPPING_FEE_ENVIO = 5.0;
 const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
 const DELIVERY_STATUSES = ['pendiente', 'en_reparto', 'entregado', 'devuelto'];
+const DISCOUNT_OPTIONS = [0, 10, 20, 30, 40];
+
+function effPrice(row) {
+  const d = Math.max(0, Math.min(40, Number(row.discount) || 0));
+  return Math.round((row.list_price || row.price || 0) * (1 - d / 100) * 100) / 100;
+}
+function ageDays(dateStr) {
+  if (!dateStr) return 0;
+  const t = new Date(dateStr.replace(' ', 'T'));
+  if (isNaN(t.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - t.getTime()) / 86400000));
+}
+function logMove(productId, size, type, qty, note) {
+  db.prepare('INSERT INTO stock_movements (product_id, size, type, qty, note) VALUES (?, ?, ?, ?, ?)')
+    .run(productId, size, type, qty, note || '');
+}
 
 function productRow(row) {
   return {
@@ -18,14 +34,41 @@ function productRow(row) {
     name: row.name,
     description: row.description,
     category: row.category,
-    price: row.price,
+    list_price: row.list_price,
+    price: effPrice(row),
+    discount: row.discount || 0,
     image: row.image,
     active: !!row.active
   };
 }
 
 function getSizes(productId) {
-  return db.prepare('SELECT size, stock FROM product_sizes WHERE product_id = ? ORDER BY CASE size WHEN \'S\' THEN 1 WHEN \'M\' THEN 2 WHEN \'L\' THEN 3 WHEN \'XL\' THEN 4 ELSE 5 END').all(productId);
+  return db.prepare(`SELECT size, stock, last_inbound FROM product_sizes WHERE product_id = ? ORDER BY CASE size WHEN 'S' THEN 1 WHEN 'M' THEN 2 WHEN 'L' THEN 3 WHEN 'XL' THEN 4 ELSE 5 END`).all(productId);
+}
+
+function sizesWithAge(productId) {
+  return getSizes(productId).map(s => ({ size: s.size, stock: s.stock, last_inbound: s.last_inbound || null, age_days: ageDays(s.last_inbound) }));
+}
+
+function syncSizes(pid, newSizes) {
+  const get = db.prepare('SELECT stock FROM product_sizes WHERE product_id = ? AND size = ?');
+  const upd = db.prepare('UPDATE product_sizes SET stock = ?, last_inbound = ? WHERE product_id = ? AND size = ?');
+  const ins = db.prepare('INSERT INTO product_sizes (product_id, size, stock, last_inbound) VALUES (?, ?, ?, ?)');
+  for (const s of newSizes) {
+    if (!s.size || s.size === '') continue;
+    const next = Math.max(0, Number(s.stock) || 0);
+    const row = get.get(pid, s.size);
+    if (row) {
+      const delta = next - row.stock;
+      if (delta !== 0) {
+        if (delta > 0) { upd.run(next, new Date().toISOString(), pid, s.size); logMove(pid, s.size, 'entrada', delta, 'Ajuste manual'); }
+        else { upd.run(next, null, pid, s.size); logMove(pid, s.size, 'salida', -delta, 'Ajuste manual'); }
+      }
+    } else if (next > 0) {
+      ins.run(pid, String(s.size), next, new Date().toISOString());
+      logMove(pid, String(s.size), 'entrada', next, 'Ajuste manual');
+    }
+  }
 }
 
 // ---------- PRODUCTS ----------
@@ -47,16 +90,24 @@ app.get('/api/products/:id', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { name, description = '', category = 'Ropa', price, image = '', sizes = [] } = req.body || {};
-  if (!name || price === undefined || isNaN(Number(price))) {
-    return res.status(400).json({ error: 'name y price son obligatorios' });
+  const { name, description = '', category = 'Ropa', list_price, price, discount, image = '', sizes = [] } = req.body || {};
+  const base = Number(list_price !== undefined ? list_price : price);
+  if (!name || base === undefined || isNaN(base)) {
+    return res.status(400).json({ error: 'name y un precio de lista son obligatorios' });
   }
-  const ins = db.prepare('INSERT INTO products (name, description, category, price, image) VALUES (?, ?, ?, ?, ?)');
-  const result = ins.run(name, description, category, Number(price), image);
+  const disc = DISCOUNT_OPTIONS.includes(Number(discount)) ? Number(discount) : 0;
+  const eff = Math.round(base * (1 - disc / 100) * 100) / 100;
+  const ins = db.prepare('INSERT INTO products (name, description, category, list_price, price, discount, image) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const result = ins.run(name, description, category, base, eff, disc, image);
   const pid = result.lastInsertRowid;
-  const insS = db.prepare('INSERT INTO product_sizes (product_id, size, stock) VALUES (?, ?, ?)');
+  const nowIso = new Date().toISOString();
+  const insS = db.prepare('INSERT INTO product_sizes (product_id, size, stock, last_inbound) VALUES (?, ?, ?, ?)');
   for (const s of sizes || []) {
-    if (s.size) insS.run(pid, String(s.size), Math.max(0, Number(s.stock) || 0));
+    if (s.size) {
+      const stock = Math.max(0, Number(s.stock) || 0);
+      insS.run(pid, String(s.size), stock, nowIso);
+      if (stock > 0) logMove(pid, String(s.size), 'entrada', stock, 'Carga inicial');
+    }
   }
   res.status(201).json({ id: Number(pid), ...productRow(db.prepare('SELECT * FROM products WHERE id = ?').get(pid)) });
 });
@@ -65,29 +116,25 @@ app.put('/api/products/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Producto no encontrado' });
   const b = req.body || {};
-  db.prepare('UPDATE products SET name = ?, description = ?, category = ?, price = ?, image = ?, active = ? WHERE id = ?')
+  let listPrice = existing.list_price, disc = existing.discount || 0;
+  if (b.list_price !== undefined) listPrice = Number(b.list_price);
+  if (b.discount !== undefined) disc = DISCOUNT_OPTIONS.includes(Number(b.discount)) ? Number(b.discount) : disc;
+  const eff = Math.round(listPrice * (1 - disc / 100) * 100) / 100;
+  db.prepare('UPDATE products SET name = ?, description = ?, category = ?, list_price = ?, price = ?, discount = ?, image = ?, active = ? WHERE id = ?')
     .run(
       b.name ?? existing.name,
       b.description ?? existing.description,
       b.category ?? existing.category,
-      b.price !== undefined ? Number(b.price) : existing.price,
+      listPrice,
+      eff,
+      disc,
       b.image ?? existing.image,
       b.active !== undefined ? (b.active ? 1 : 0) : existing.active,
       existing.id
     );
-  if (Array.isArray(b.sizes)) {
-    const ups = db.prepare(`
-      INSERT INTO product_sizes (product_id, size, stock) VALUES (?, ?, ?)
-      ON CONFLICT(product_id, size) DO UPDATE SET stock = excluded.stock
-    `);
-    for (const s of b.sizes) {
-      if (s.size && s.size !== '') {
-        ups.run(existing.id, String(s.size), Math.max(0, Number(s.stock) || 0));
-      }
-    }
-  }
+  if (Array.isArray(b.sizes)) syncSizes(existing.id, b.sizes);
   const fresh = db.prepare('SELECT * FROM products WHERE id = ?').get(existing.id);
-  res.json({ ...productRow(fresh), sizes: getSizes(fresh.id) });
+  res.json({ ...productRow(fresh), sizes: sizesWithAge(fresh.id) });
 });
 
 app.delete('/api/products/:id', (req, res) => {
@@ -131,7 +178,7 @@ app.post('/api/checkout', (req, res) => {
         });
       }
       detail.push({ product: prod, size, qty });
-      subtotal += prod.price * qty;
+      subtotal += effPrice(prod) * qty;
     }
 
     const total = subtotal + shippingFee;
@@ -143,8 +190,9 @@ app.post('/api/checkout', (req, res) => {
     const saleId = Number(saleRes.lastInsertRowid);
 
     for (const d of detail) {
-      insItem.run(saleId, d.product.id, d.product.name, d.size, d.qty, d.product.price);
+      insItem.run(saleId, d.product.id, d.product.name, d.size, d.qty, effPrice(d.product));
       updStock.run(d.qty, d.product.id, d.size);
+      logMove(d.product.id, d.size, 'salida', d.qty, `Venta pedido #${saleId}`);
     }
 
     if (delivery_method === 'envio') {
@@ -214,8 +262,11 @@ app.put('/api/orders/:id', (req, res) => {
     if (b.status === 'cancelado' && deliveryExists) {
       // Devolver stock al cancelar (solo si no fue entregado)
       const order = saleDetail(sale.id);
-      const restock = db.prepare('UPDATE product_sizes SET stock = stock + ? WHERE product_id = ? AND size = ?');
-      for (const it of order.items) { restock.run(it.quantity, it.product_id, it.size); }
+      const restock = db.prepare('UPDATE product_sizes SET stock = stock + ?, last_inbound = ? WHERE product_id = ? AND size = ?');
+      for (const it of order.items) {
+        restock.run(it.quantity, new Date().toISOString(), it.product_id, it.size);
+        logMove(it.product_id, it.size, 'devolucion', it.quantity, `Cancelación pedido #${sale.id}`);
+      }
       db.prepare('UPDATE deliveries SET status = ? WHERE sale_id = ?').run('devuelto', sale.id);
     }
   }
@@ -261,13 +312,31 @@ app.put('/api/delivery/:saleId', (req, res) => {
   res.json(saleDetail(sale.id));
 });
 
+// ---------- MOVEMENTS (datos de entrada/salida) ----------
+
+app.get('/api/movements', (req, res) => {
+  const { type, product_id } = req.query;
+  let sql = 'SELECT * FROM stock_movements WHERE 1=1';
+  const params = [];
+  if (type) { sql += ' AND type = ?'; params.push(type); }
+  if (product_id) { sql += ' AND product_id = ?'; params.push(product_id); }
+  sql += ' ORDER BY id DESC';
+  const rows = db.prepare(sql).all(...params);
+  res.json(rows.map(r => ({
+    ...r,
+    product_name: (db.prepare('SELECT name FROM products WHERE id = ?').get(r.product_id) || {}).name || 'Eliminado'
+  })));
+});
+
 // ---------- ESTADISTICAS / REPORTES ----------
 
 app.get('/api/stats', (req, res) => {
   const today = db.prepare("SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS count FROM sales WHERE created_at >= date('now') AND status != 'cancelado'").get();
   const pending = db.prepare("SELECT COUNT(*) AS count FROM sales WHERE status IN ('pendiente','confirmado','enviado')").get();
   const productsCount = db.prepare('SELECT COUNT(*) AS count FROM products WHERE active = 1').get();
-  const lowStock = db.prepare('SELECT COUNT(*) AS count FROM product_sizes ps JOIN products p ON p.id = ps.product_id WHERE ps.stock <= 2 AND p.active = 1').get();
+  const lowStockRows = db.prepare('SELECT ps.stock, ps.last_inbound, ps.product_id, p.active FROM product_sizes ps JOIN products p ON p.id = ps.product_id').all();
+  const lowStock = lowStockRows.filter(r => r.active && r.stock <= 2).length;
+  const aging = lowStockRows.filter(r => r.active && r.stock > 0 && ageDays(r.last_inbound) > 30).length;
   const totalUnitsSold = db.prepare("SELECT COALESCE(SUM(quantity),0) AS total FROM sale_items si JOIN sales s ON s.id = si.sale_id WHERE s.status != 'cancelado'").get();
 
   const inventoryValue = db.prepare(`
@@ -280,7 +349,8 @@ app.get('/api/stats', (req, res) => {
     orders_today: today.count,
     pending_orders: pending.count,
     active_products: productsCount.count,
-    low_stock: lowStock.count,
+    low_stock: lowStock,
+    aging_alerts: aging,
     units_sold: totalUnitsSold.total,
     inventory_value: inventoryValue.total
   });
@@ -289,7 +359,7 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/inventory', (req, res) => {
   const rows = db.prepare('SELECT * FROM products ORDER BY id DESC').all();
   const data = rows.map(r => {
-    const sizes = getSizes(r.id);
+    const sizes = sizesWithAge(r.id);
     const totalStock = sizes.reduce((a, s) => a + s.stock, 0);
     const sold = db.prepare(`
       SELECT COALESCE(SUM(si.quantity),0) AS q FROM sale_items si
@@ -310,7 +380,17 @@ app.get('/api/reports/sales', (req, res) => {
   if (from && to) { params.push(from, to); }
 
   let rows;
-  if (group === 'day') {
+  if (group === 'month') {
+    rows = db.prepare(`
+      SELECT substr(s.created_at, 1, 7) AS label,
+             COUNT(*) AS orders,
+             COALESCE(SUM(s.total), 0) AS revenue,
+             COALESCE(SUM((SELECT COALESCE(SUM(si2.quantity), 0) FROM sale_items si2 WHERE si2.sale_id = s.id)), 0) AS units
+      FROM sales s WHERE s.status != 'cancelado' ${filter}
+      GROUP BY label ORDER BY label
+    `).all(...params);
+    return res.json(rows);
+  } else if (group === 'day') {
     rows = db.prepare(`
       SELECT date(s.created_at) AS label, COUNT(*) AS orders, COALESCE(SUM(s.total),0) AS revenue
       FROM sales s WHERE s.status != 'cancelado' ${filter}

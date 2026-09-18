@@ -16,7 +16,9 @@ function init() {
       name TEXT NOT NULL,
       description TEXT DEFAULT '',
       category TEXT DEFAULT 'ropa',
+      list_price REAL NOT NULL DEFAULT 0,
       price REAL NOT NULL DEFAULT 0,
+      discount INTEGER NOT NULL DEFAULT 0,
       image TEXT DEFAULT '',
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
@@ -27,7 +29,18 @@ function init() {
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       size TEXT NOT NULL,
       stock INTEGER NOT NULL DEFAULT 0,
+      last_inbound TEXT,
       UNIQUE(product_id, size)
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      size TEXT DEFAULT '',
+      type TEXT NOT NULL,               -- entrada | salida | ajuste | devolucion
+      qty INTEGER NOT NULL,
+      note TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS sales (
@@ -36,9 +49,9 @@ function init() {
       customer_phone TEXT DEFAULT '',
       customer_email TEXT DEFAULT '',
       address TEXT DEFAULT '',
-      delivery_method TEXT NOT NULL DEFAULT 'envio',   -- envio | retiro
+      delivery_method TEXT NOT NULL DEFAULT 'envio',
       shipping_fee REAL NOT NULL DEFAULT 0,
-      status TEXT NOT NULL DEFAULT 'pendiente',          -- pendiente | confirmado | enviado | entregado | cancelado
+      status TEXT NOT NULL DEFAULT 'pendiente',
       subtotal REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL DEFAULT 0,
       notes TEXT DEFAULT '',
@@ -60,11 +73,20 @@ function init() {
       sale_id INTEGER NOT NULL UNIQUE REFERENCES sales(id) ON DELETE CASCADE,
       courier TEXT DEFAULT '',
       tracking_number TEXT DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'pendiente',          -- pendiente | en_reparto | entregado | devuelto
+      status TEXT NOT NULL DEFAULT 'pendiente',
       estimated_date TEXT DEFAULT '',
       delivered_at TEXT DEFAULT ''
     );
   `);
+
+  // migracion de esquemas previos
+  const cols = db.prepare('PRAGMA table_info(products)').all().map(c => c.name);
+  if (!cols.includes('list_price')) db.exec('ALTER TABLE products ADD COLUMN list_price REAL NOT NULL DEFAULT 0');
+  if (!cols.includes('discount')) db.exec('ALTER TABLE products ADD COLUMN discount INTEGER NOT NULL DEFAULT 0');
+  const scols = db.prepare('PRAGMA table_info(product_sizes)').all().map(c => c.name);
+  if (!scols.includes('last_inbound')) db.exec('ALTER TABLE product_sizes ADD COLUMN last_inbound TEXT');
+  db.exec("UPDATE product_sizes SET last_inbound = (SELECT created_at FROM products WHERE id = product_id) WHERE last_inbound IS NULL");
+  db.exec("UPDATE products SET list_price = price WHERE list_price = 0");
 }
 
 function seedIfEmpty() {
@@ -85,18 +107,22 @@ function seedIfEmpty() {
   ];
 
   const sizes = ['S', 'M', 'L', 'XL'];
+  const created = new Date().toISOString();
 
-  const insP = db.prepare('INSERT INTO products (name, description, category, price, image) VALUES (?, ?, ?, ?, ?)');
-  const insS = db.prepare('INSERT INTO product_sizes (product_id, size, stock) VALUES (?, ?, ?)');
+  const insP = db.prepare('INSERT INTO products (name, description, category, list_price, price, discount, image) VALUES (?, ?, ?, ?, ?, 0, ?)');
+  const insS = db.prepare('INSERT INTO product_sizes (product_id, size, stock, last_inbound) VALUES (?, ?, ?, ?)');
+  const insM = db.prepare('INSERT INTO stock_movements (product_id, size, type, qty, note, created_at) VALUES (?, ?, ?, ?, ?, ?)');
 
   products.forEach((p, idx) => {
-    const res = insP.run(p.name, p.description, p.category, p.price, p.image);
+    const res = insP.run(p.name, p.description, p.category, p.price, p.price, p.image);
     const pid = res.lastInsertRowid;
     sizes.forEach((s, si) => {
       let stock = 8 + ((idx * 3 + si * 5) % 25);
       if ((idx + si) % 7 === 0) stock = 0;
       if (idx === 3 && si === 0) stock = 0;
-      insS.run(pid, s, stock);
+      const lb = idx % 2 === 0 ? new Date(Date.now() - (5 + idx) * 86400000).toISOString() : new Date(Date.now() - (40 + si * 3) * 86400000).toISOString();
+      insS.run(pid, s, stock, lb);
+      if (stock > 0) insM.run(pid, s, 'entrada', stock, 'Carga inicial', lb);
     });
   });
 }

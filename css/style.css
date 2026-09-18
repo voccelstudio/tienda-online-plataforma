@@ -22,6 +22,9 @@
 html { scroll-behavior: smooth; }
 body { font-family: var(--font); background: var(--bg); color: var(--ink); line-height: 1.5; }
 
+/* El atributo hidden debe ganar siempre (p.ej. el cajon del carrito) */
+[hidden] { display: none !important; }
+
 button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 input, select, textarea { font-family: inherit; font-size: 0.95rem; }
 img { display: block; max-width: 100%; }
@@ -263,3 +266,52 @@ td .thumb-sm img { width: 100%; height: 100%; object-fit: cover; }
   .main-nav { margin-left: 0; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 }
+
+/* ---------- Descuentos ---------- */
+.disc-badge { position: absolute; top: 10px; right: 10px; background: var(--danger); color: #fff; font-size: .74rem; font-weight: 800; padding: 4px 9px; border-radius: 999px; letter-spacing: .02em; }
+.price-line { text-decoration: line-through; color: var(--muted); font-weight: 500; font-size: .9rem; margin-right: 8px !important; }
+.price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+.price-row .price, .price-row .price-lg { margin-top: 0; }
+.save-tag { display: inline-block; background: #fdecea; color: var(--danger); font-size: .76rem; font-weight: 800; padding: 3px 8px; border-radius: 999px; margin-top: 8px; }
+
+/* ---------- Antiguedad / alertas de stock ---------- */
+.age-chip { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.age-chip.ok { background: #dcfce7; color: #166534; }
+.age-chip.mid { background: #fef3c7; color: #92400e; }
+.age-chip.old { background: #fee2e2; color: #991b1b; }
+.stock-cell { display: inline-grid; justify-items: center; gap: 2px; }
+.stock-cell .n { font-weight: 700; }
+.stock-cell .n.agotado { color: var(--danger); }
+.stock-cell small { font-size: .68rem; color: var(--muted); letter-spacing: .04em; }
+.mv { font-size: .7rem; font-weight: 800; padding: 2px 7px; border-radius: 999px; }
+.mv.entrada { background: #dcfce7; color: #166534; }
+.mv.salida { background: #fee2e2; color: #991b1b; }
+.mv.ajuste { background: #e0e7ff; color: #3730a3; }
+.mv.devolucion { background: #edd9f7; color: #6b21a8; }
+
+/* ---------- Toggle segmentado (Products / Movimientos) ---------- */
+.seg { display: inline-flex; background: var(--bg); border-radius: 11px; padding: 3px; gap: 3px; }
+.seg button { padding: 8px 16px; border-radius: 9px; font-weight: 700; font-size: .85rem; color: var(--muted); }
+.seg button.active { background: var(--surface); box-shadow: var(--shadow); color: var(--ink); }
+
+/* ---------- Upload de imagen ---------- */
+.img-preview { width: 96px; height: 120px; border-radius: 10px; background: var(--bg); overflow: hidden; display: grid; place-items: center; font-size: 2rem; border: 1px solid var(--line); flex-shrink: 0; }
+.img-preview img { width: 100%; height: 100%; object-fit: cover; }
+.upload-row { display: flex; gap: 12px; align-items: center; }
+.upload-btn { position: relative; overflow: hidden; }
+.upload-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* ---------- Reportes mensuales ---------- */
+.mo-grid { display: flex; gap: 16px; align-items: flex-end; min-height: 300px; overflow-x: auto; padding-bottom: 6px; }
+.mo-col { flex: 1; min-width: 86px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.mo-col .rev { font-size: .7rem; font-weight: 700; }
+.mo-col .track { width: 100%; height: 230px; display: flex; align-items: flex-end; background: #faf9f6; border-radius: 8px; overflow: hidden; }
+.mo-col .fill { width: 100%; border-radius: 8px 8px 0 0; background: linear-gradient(180deg, var(--accent-2), var(--accent)); min-height: 2px; }
+.mo-col .lbl { font-size: .74rem; font-weight: 700; color: var(--ink); }
+.mo-col .sub { font-size: .7rem; color: var(--muted); }
+.delta-up { color: var(--ok); font-weight: 800; }
+.delta-down { color: var(--danger); font-weight: 800; }
+.mini-note { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+
+/* ---------- Panel de movimiento de stock ---------- */
+.mvtools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }

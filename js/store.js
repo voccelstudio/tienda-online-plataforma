@@ -103,6 +103,7 @@ const Store = {
     const stocks = `${p.sizes.map(s => `${s.size}:${s.stock}`).join(', ')}`;
     let tag = '';
     if (stock === 0) tag = ' agotado';
+    const disc = p.discount > 0;
     const stockLine = stock >= 8
       ? `<div class="stock-line ok"><i class="fa-solid fa-circle-check"></i> En stock · ${stocks}</div>`
       : stock > 0
@@ -112,13 +113,14 @@ const Store = {
       <div class="card" data-open-product="${p.id}">
         <div class="card-img">
           ${p.image ? imgFallback(p.image) : `<span class="ph">👕</span>`}
+          ${disc ? `<span class="disc-badge">-${p.discount}%</span>` : ''}
           ${tag ? `<span class="card-tag agotado">AGOTADO</span>` : `<span class="card-tag">${esc(p.category)}</span>`}
         </div>
         <div class="card-body">
           <h3>${esc(p.name)}</h3>
           <div class="cat">${esc(p.category)}</div>
           <div class="card-price">
-            <span class="price">${money(p.price)}</span>
+            <span class="price-row" style="margin-top:0">${disc ? `<span class="price-line">${money(p.list_price)}</span>` : ''}<span class="price">${money(p.price)}</span></span>
             <button class="btn btn-accent btn-sm" data-open-product="${p.id}"><i class="fa-solid fa-cart-plus"></i></button>
           </div>
           ${stockLine}
@@ -157,11 +159,18 @@ const Store = {
           <button class="modal-close" id="pmClose"><i class="fa-solid fa-xmark"></i></button>
         </div>
         <div class="prod-detail">
-          <div class="card-img">${p.image ? imgFallback(p.image) : `<span class="ph">👕</span>`}</div>
+          <div class="card-img">
+            ${p.image ? imgFallback(p.image) : `<span class="ph">👕</span>`}
+            ${p.discount > 0 ? `<span class="disc-badge">-${p.discount}%</span>` : ''}
+          </div>
           <div class="prod-info">
             <div class="cat">${esc(p.category)}</div>
             <h2>${esc(p.name)}</h2>
-            <div class="price-lg">${money(p.price)}</div>
+            <div class="price-row" style="margin-top:12px">
+              ${p.discount > 0 ? `<span class="price-line" style="font-size:1.05rem">${money(p.list_price)}</span>` : ''}
+              <span class="price-lg">${money(p.price)}</span>
+            </div>
+            ${p.discount > 0 ? `<span class="save-tag"><i class="fa-solid fa-tag"></i> Ahorras ${money(p.list_price - p.price)} (${p.discount}%)</span>` : ''}
             <p class="desc">${esc(p.description)}</p>
             <div class="sizes">
               <span>Elige tu talla *</span>

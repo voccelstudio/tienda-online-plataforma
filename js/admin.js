@@ -89,6 +89,7 @@ const Admin = {
         <div class="stat-card"><div class="lbl">Unidades vendidas</div><div class="num">${s.units_sold || 0}</div></div>
         <div class="stat-card ok"><div class="lbl">Valor en inventario</div><div class="num">${money(s.inventory_value || 0)}</div></div>
         <div class="stat-card ${s.low_stock > 0 ? 'warn' : 'ok'}"><div class="lbl">Alertas de stock bajo</div><div class="num">${s.low_stock || 0}</div></div>
+        <div class="stat-card ${(s.aging_alerts || 0) > 0 ? 'warn' : 'ok'}"><div class="lbl">Añejado (+30 días)</div><div class="num">${s.aging_alerts || 0}</div></div>
       </div>
       <div class="two-col">
         <div class="panel-card">
@@ -134,61 +135,118 @@ const Admin = {
 
   // ---------------- INVENTARIO ----------------
   inventoryHTML() {
+    this.invMode = this.invMode || 'productos';
     return `
       <div class="panel-head">
         <h2><i class="fa-solid fa-boxes-stacked"></i> Inventario y stock</h2>
-        <button class="btn btn-accent" id="addProduct"><i class="fa-solid fa-plus"></i> Nuevo producto</button>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="seg" id="invSeg">
+            <button data-imode="productos" class="${this.invMode === 'productos' ? 'active' : ''}"><i class="fa-solid fa-box"></i> Productos</button>
+            <button data-imode="movimientos" class="${this.invMode === 'movimientos' ? 'active' : ''}"><i class="fa-solid fa-clock-rotate-left"></i> Movimientos</button>
+          </div>
+          <button class="btn btn-accent" id="addProduct" ${this.invMode !== 'productos' ? 'hidden' : ''}><i class="fa-solid fa-plus"></i> Nuevo producto</button>
+        </div>
       </div>
-      <div class="toolbar" style="margin:0 0 16px">
-        <div class="search-box grow"><i class="fa-solid fa-magnifying-glass"></i><input id="invSearch" placeholder="Buscar producto..."></div>
-        <span class="muted">${this.inventory.length} productos</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th></th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Stock por talla</th><th>Total</th><th>Vendidos</th><th>Estado</th><th>Acciones</th></tr>
-          </thead>
-          <tbody id="invBody"></tbody>
-        </table>
-      </div>
+      ${this.invMode === 'productos' ? `
+        <div class="toolbar" style="margin:0 0 16px">
+          <div class="search-box grow"><i class="fa-solid fa-magnifying-glass"></i><input id="invSearch" placeholder="Buscar producto..."></div>
+          <span class="muted">${this.inventory.length} productos · cada talla muestra uds y días en stock</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th></th><th>Producto</th><th>Precio</th><th>Stock por talla (uds / días)</th><th>Total</th><th>Vendidos</th><th>Estado</th><th>Acciones</th></tr>
+            </thead>
+            <tbody id="invBody"></tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="mvtools" id="mvTools">
+          ${['todas', 'entrada', 'salida', 'ajuste', 'devolucion'].map(t => `<button class="chip ${(this.mvFilter || 'todas') === t ? 'active' : ''}" data-mv="${t}">${t === 'todas' ? '<i class="fa-solid fa-list"></i> Todos' : t === 'entrada' ? '<i class="fa-solid fa-arrow-down-long"></i> Entradas' : t === 'salida' ? '<i class="fa-solid fa-arrow-up-long"></i> Salidas' : t === 'ajuste' ? '<i class="fa-solid fa-sliders"></i> Ajustes' : '<i class="fa-solid fa-rotate-left"></i> Devoluciones'}</button>`).join('')}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Producto</th><th>Talla</th><th>Tipo</th><th>Cantidad</th><th>Nota</th></tr></thead>
+            <tbody id="mvBody"><tr><td colspan="6" class="muted" style="text-align:center">Cargando movimientos...</td></tr></tbody>
+          </table>
+        </div>
+      `}
     `;
   },
 
   inventoryRowHTML(p) {
     const total = totalStock(p.sizes);
-    const sizeCells = p.sizes.map(s => `
-      <td style="text-align:center" title="${esc(s.size)}">
-        <span class="muted" style="font-size:.72rem">${esc(s.size)}</span><br>
-        <span class="${s.stock <= 0 ? 'low' : s.stock <= 3 ? 'mid' : ''}">${s.stock}</span>
-      </td>`).join('');
-    const state = !p.active ? '<span class="status cancelado">inactivo</span>'
+    const maxAge = Math.max(0, ...p.sizes.map(s => s.age_days || 0));
+    const sizeCells = p.sizes.map(s => this.sizeCell(s)).join('');
+    const state = !p.active ? '<span class="status cancelado"><i class="fa-solid fa-ban"></i> inactivo</span>'
       : total === 0 ? '<span class="status cancelado">agotado</span>'
       : total <= 4 ? '<span class="status pendiente">bajo</span>'
+      : maxAge > 30 ? '<span class="status" style="background:#fee2e2;color:#991b1b"><i class="fa-solid fa-hourglass-half"></i> añejado</span>'
       : '<span class="status entregado">ok</span>';
     return `
       <tr data-invrow="${p.id}">
         <td>${thumb(p.image)}</td>
-        <td><strong>${esc(p.name)}</strong><div class="muted" style="font-size:.78rem">#${p.id}</div></td>
-        <td>${esc(p.category)}</td>
-        <td><strong>${money(p.price)}</strong></td>
+        <td><strong>${esc(p.name)}</strong><div class="muted" style="font-size:.78rem">${esc(p.category)} · #${p.id}${p.discount > 0 ? ` · <span style="color:var(--danger)">-${p.discount}%</span>` : ''}</div></td>
+        <td><strong>${money(p.price)}</strong>${p.discount > 0 ? `<div class="muted" style="font-size:.76rem;text-decoration:line-through">${money(p.list_price)}</div>` : ''}</td>
         <td style="white-space:normal">${sizeCells}</td>
         <td><strong>${total}</strong></td>
         <td>${p.units_sold}</td>
         <td>${state}</td>
         <td>
-          <button class="btn btn-sm btn-outline" data-edit-product="${p.id}"><i class="fa-solid fa-pen"></i></button>
-          <button class="btn btn-sm btn-outline" data-stock-product="${p.id}"><i class="fa-solid fa-boxes-stacked"></i></button>
-          <button class="btn btn-sm btn-danger" data-del-product="${p.id}"><i class="fa-solid fa-trash"></i></button>
+          <button class="btn btn-sm btn-outline" data-edit-product="${p.id}" title="Editar"><i class="fa-solid fa-pen"></i></button>
+          <button class="btn btn-sm btn-outline" data-stock-product="${p.id}" title="Ajustar stock"><i class="fa-solid fa-boxes-stacked"></i></button>
+          <button class="btn btn-sm ${p.active ? 'btn-outline' : 'btn-primary'}" data-toggle-product="${p.id}" title="${p.active ? 'Sacar del catálogo' : 'Activar en catálogo'}"><i class="fa-solid ${p.active ? 'fa-eye-slash' : 'fa-eye'}"></i></button>
+          <button class="btn btn-sm btn-danger" data-del-product="${p.id}" title="Eliminar"><i class="fa-solid fa-trash"></i></button>
         </td>
       </tr>`;
   },
 
+  sizeCell(s) {
+    const nCls = s.stock <= 2 ? 'agotado' : (s.age_days > 30 ? 'agotado' : '');
+    const chip = s.age_days > 30 ? 'old' : s.age_days >= 15 ? 'mid' : 'ok';
+    const warn = s.age_days > 30 ? `<span class="age-chip old" title="Más de 30 días en stock: alarmar">⚠ ${s.age_days}d</span>`
+      : s.age_days >= 15 ? `<span class="age-chip mid" title="15-30 días en stock">${s.age_days}d</span>`
+      : s.stock > 0 ? `<span class="age-chip ok" title="Rotación reciente">${s.age_days}d</span>` : '';
+    return `<td class="stock-cell"><span class="n ${nCls}" title="${esc(s.size)}">${s.stock}</span><small>${esc(s.size)}</small>${warn}</td>`;
+  },
+
+  movementsHTML() {
+    const body = document.getElementById('mvBody');
+    if (!body) return;
+    const q = this.mvFilter && this.mvFilter !== 'todas' ? '?type=' + this.mvFilter : '';
+    API.get('/api/movements' + q).then(list => {
+      body.innerHTML = list.length ? list.map(mv => `
+        <tr>
+          <td>${esc(mv.created_at)}</td>
+          <td><strong>${esc(mv.product_name)}</strong></td>
+          <td>${esc(mv.size || '—')}</td>
+          <td><span class="mv ${mv.type}">${mv.type}</span></td>
+          <td style="color:${mv.qty > 0 ? 'var(--ok)' : 'var(--danger)'}"><strong>${mv.qty > 0 ? '+' : ''}${mv.qty}</strong></td>
+          <td class="muted">${esc(mv.note || '')}</td>
+        </tr>`).join('') : '<tr><td colspan="6" class="muted" style="text-align:center">Sin movimientos con ese filtro.</td></tr>';
+    }).catch(e => { body.innerHTML = `<tr><td colspan="6" class="muted">${esc(e.message)}</td></tr>`; });
+  },
+
   inventoryBind() {
     const tbody = document.getElementById('invBody');
+    if (!tbody) {
+      if (document.getElementById('mvTools')) {
+        document.getElementById('mvTools').querySelectorAll('[data-mv]').forEach(ch => {
+          ch.addEventListener('click', () => { this.mvFilter = ch.dataset.mv; this.render(); });
+        });
+        this.movementsHTML();
+      }
+      if (document.getElementById('invSeg')) {
+        document.getElementById('invSeg').querySelectorAll('[data-imode]').forEach(b => {
+          b.addEventListener('click', () => { this.invMode = b.dataset.imode; this.render(); });
+        });
+      }
+      return;
+    }
     const draw = () => {
       const q = this.invSearchVal ? this.invSearchVal.toLowerCase() : '';
       const list = this.inventory.filter(p => !q || (p.name + ' ' + p.category).toLowerCase().includes(q));
-      tbody.innerHTML = list.map(p => this.inventoryRowHTML(p)).join('') || '<tr><td colspan="9" class="muted" style="text-align:center">Sin resultados</td></tr>';
+      tbody.innerHTML = list.map(p => this.inventoryRowHTML(p)).join('') || '<tr><td colspan="8" class="muted" style="text-align:center">Sin resultados</td></tr>';
     };
     const input = document.getElementById('invSearch');
     input.addEventListener('input', () => { this.invSearchVal = input.value; draw(); });
@@ -197,13 +255,31 @@ const Admin = {
       const edit = e.target.closest('[data-edit-product]');
       const stock = e.target.closest('[data-stock-product]');
       const del = e.target.closest('[data-del-product]');
+      const tog = e.target.closest('[data-toggle-product]');
       if (edit) this.openProductAdmin(Number(edit.dataset.editProduct), 'form');
       else if (stock) this.openProductAdmin(Number(stock.dataset.stockProduct), 'stock');
+      else if (tog) this.toggleProduct(Number(tog.dataset.toggleProduct));
       else if (del) this.deleteProduct(Number(del.dataset.delProduct));
     });
 
     document.getElementById('addProduct').addEventListener('click', () => this.openProductAdmin(null, 'form'));
+    if (document.getElementById('invSeg')) {
+      document.getElementById('invSeg').querySelectorAll('[data-imode]').forEach(b => {
+        b.addEventListener('click', () => { this.invMode = b.dataset.imode; this.render(); });
+      });
+    }
     draw();
+  },
+
+  async toggleProduct(id) {
+    const p = this.inventory.find(x => x.id === id);
+    if (!p) return;
+    try {
+      await API.put('/api/products/' + id, { active: !p.active });
+      toast(p.active ? 'Producto oculto del catálogo' : 'Producto activado en la tienda');
+      await this.loadInventory();
+      this.render();
+    } catch (e) { toast(e.message, 'err'); }
   },
 
   async deleteProduct(id) {
@@ -220,7 +296,7 @@ const Admin = {
 
   openProductAdmin(id, mode) {
     const p = id ? this.inventory.find(x => x.id === id) : null;
-    this.editingProduct = p ? { ...p, sizes: (p.sizes || []).map(s => ({ ...s })) } : { name: '', description: '', category: 'Camisetas', price: '', image: '', active: true, sizes: [{ size: 'S', stock: 0 }, { size: 'M', stock: 0 }, { size: 'L', stock: 0 }, { size: 'XL', stock: 0 }] };
+    this.editingProduct = p ? { ...p, sizes: (p.sizes || []).map(s => ({ ...s })) } : { name: '', description: '', category: 'Camisetas', list_price: '', discount: 0, image: '', active: true, sizes: [{ size: 'S', stock: 0 }, { size: 'M', stock: 0 }, { size: 'L', stock: 0 }, { size: 'XL', stock: 0 }] };
     const overlay = document.getElementById('prodAdminModal');
     const box = document.getElementById('prodAdminModalBox');
     overlay.hidden = false;
@@ -242,8 +318,24 @@ const Admin = {
                 <option ${!categories.includes(e.category) ? 'selected' : ''} value="${esc(e.category)}">${esc(e.category) || 'Otra'}</option>
               </select>
             </div>
-            <div class="field"><label>Precio (USD) *</label><input name="price" type="number" step="0.01" min="0" value="${e.price}" required></div>
-            <div class="field"><label>Imagen (URL)</label><input name="image" value="${esc(e.image)}" placeholder="https://..."></div>
+            <div class="field"><label>Precio de lista (original) *</label><input name="list_price" id="listPrice" type="number" step="0.01" min="0" value="${e.list_price !== undefined && e.list_price !== '' ? e.list_price : e.price}" required></div>
+            <div class="field">
+              <label>Descuento</label>
+              <select name="discount" id="discSel">
+                ${[0, 10, 20, 30, 40].map(d => `<option value="${d}" ${(e.discount || 0) == d ? 'selected' : ''}>${d === 0 ? 'Sin descuento' : d + '% de descuento'}</option>`).join('')}
+              </select>
+              <div id="priceHint" class="mini-note"></div>
+            </div>
+            <div class="field full">
+              <label>Foto del producto</label>
+              <div class="upload-row">
+                <div class="img-preview" id="imgPrev">${e.image ? `<img src="${esc(e.image)}" alt="">` : '👕'}</div>
+                <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+                  <input name="image" id="imgUrl" value="${esc(e.image)}" placeholder="https://...  o sube un archivo">
+                  <label class="btn btn-outline btn-sm upload-btn" style="width:max-content"><i class="fa-solid fa-cloud-arrow-up"></i> Subir foto desde archivo<input type="file" id="imgFile" accept="image/*"></label>
+                </div>
+              </div>
+            </div>
             <div class="field full"><label>Descripción</label><textarea name="description">${esc(e.description)}</textarea></div>
             <div class="full" style="display:flex;gap:10px;align-items:center">
               <label style="display:flex;gap:8px;align-items:center;font-weight:700"><input type="checkbox" name="active" ${e.active ? 'checked' : ''}> Producto activo en tienda</label>
@@ -293,7 +385,8 @@ const Admin = {
           name: f.name.value,
           description: f.description.value,
           category: f.category.value,
-          price: Number(f.price.value),
+          list_price: Number(f.list_price.value),
+          discount: Number(f.discount.value),
           image: f.image.value,
           active: f.active.checked
         };
@@ -305,6 +398,31 @@ const Admin = {
           close();
           this.render();
         } catch (e) { toast(e.message, 'err'); }
+      });
+
+      const lp = box.querySelector('#listPrice');
+      const ds = box.querySelector('#discSel');
+      const hint = box.querySelector('#priceHint');
+      const updHint = () => {
+        if (!lp || !ds) return;
+        const v = Number(lp.value || 0);
+        const d = Number(ds.value || 0);
+        hint.innerHTML = `<i class="fa-solid fa-tag"></i> Precio final en la tienda: <strong>${money(Math.round(v * (1 - d / 100) * 100) / 100)}</strong>${d > 0 ? ` (descuento ${d}%)` : ''}`;
+      };
+      if (lp) lp.addEventListener('input', updHint);
+      if (ds) ds.addEventListener('change', updHint);
+      updHint();
+
+      const imgUrl = box.querySelector('#imgUrl');
+      const imgPrev = box.querySelector('#imgPrev');
+      const imgFile = box.querySelector('#imgFile');
+      if (imgUrl) imgUrl.addEventListener('input', () => { imgPrev.innerHTML = imgUrl.value ? `<img src="${esc(imgUrl.value)}" alt="">` : '👕'; });
+      if (imgFile) imgFile.addEventListener('change', ev => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => { imgUrl.value = reader.result; imgPrev.innerHTML = `<img src="${esc(reader.result)}" alt="">`; toast('Foto cargada'); };
+        reader.readAsDataURL(file);
       });
     }
 
@@ -570,6 +688,7 @@ const Admin = {
           <div class="field" style="flex-direction:row;align-items:center;gap:8px"><label>Hasta</label><input type="date" id="rTo" value="${this.reportTo}" class="select"></div>
           <select class="select" id="rGroup">
             <option value="day" ${this.reportGroup === 'day' ? 'selected' : ''}>Por día</option>
+            <option value="month" ${this.reportGroup === 'month' ? 'selected' : ''}>Comparativa mensual</option>
             <option value="category" ${this.reportGroup === 'category' ? 'selected' : ''}>Por categoría</option>
             <option value="product" ${this.reportGroup === 'product' ? 'selected' : ''}>Top productos</option>
           </select>
@@ -598,10 +717,54 @@ const Admin = {
       const url = `/api/reports/sales?group=${this.reportGroup}&from=${this.reportFrom}&to=${this.reportTo}`;
       const rows = await API.get(url);
       if (this.reportGroup === 'day') this.renderDayReport(rows, el);
+      else if (this.reportGroup === 'month') this.renderMonthReport(rows, el);
       else this.renderBreakdown(rows, el);
     } catch (e) {
       el.innerHTML = `<div class="muted" style="padding:20px">${esc(e.message)}</div>`;
     }
+  },
+
+  renderMonthReport(rows, el) {
+    const totalRevenue = rows.reduce((a, r) => a + r.revenue, 0);
+    const totalUnits = rows.reduce((a, r) => a + (r.units || 0), 0);
+    const max = Math.max(1, ...rows.map(r => r.revenue));
+    const bars = rows.map(r => {
+      const h = Math.max(2, Math.round(r.revenue / max * 100));
+      return `<div class="mo-col">
+        <span class="rev">${money(r.revenue)}</span>
+        <div class="track"><div class="fill" style="height:${h}%"></div></div>
+        <span class="lbl">${esc(r.label)}</span>
+        <span class="sub">${r.orders} ped · ${r.units || 0} uds</span>
+      </div>`;
+    }).join('');
+    const table = rows.map((r, i) => {
+      const prev = i > 0 ? rows[i - 1].revenue : null;
+      const delta = prev !== null && prev > 0 ? Math.round((r.revenue - prev) / prev * 100) : null;
+      const cell = delta === null ? '—' : (delta >= 0 ? `<span class="delta-up">▲ +${delta}%</span>` : `<span class="delta-down">▼ ${delta}%</span>`);
+      return `<tr>
+        <td><strong>${esc(r.label)}</strong></td>
+        <td><strong>${money(r.revenue)}</strong></td>
+        <td>${r.orders}</td><td>${r.units || 0}</td>
+        <td>${cell}</td>
+      </tr>`;
+    }).join('');
+    el.innerHTML = `
+      <div class="stat-cards">
+        <div class="stat-card accent"><div class="lbl">Ingresos totales</div><div class="num">${money(totalRevenue)}</div></div>
+        <div class="stat-card"><div class="lbl">Meses con ventas</div><div class="num">${rows.length}</div></div>
+        <div class="stat-card ok"><div class="lbl">Promedio mensual</div><div class="num">${money(rows.length ? totalRevenue / rows.length : 0)}</div></div>
+        <div class="stat-card"><div class="lbl">Unidades vendidas</div><div class="num">${totalUnits}</div></div>
+      </div>
+      <div class="panel-card" style="margin-bottom:20px">
+        <h3><i class="fa-solid fa-calendar-check"></i> Comparativa de ingresos por mes</h3>
+        <div class="mo-grid">${bars || '<span class="muted" style="padding:20px">Sin ventas en el rango.</span>'}</div>
+      </div>
+      ${rows.length ? `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Mes</th><th>Ingresos</th><th>Pedidos</th><th>Unidades</th><th>vs mes anterior</th></tr></thead>
+          <tbody>${table}</tbody>
+        </table></div>` : `<div class="muted">Sin ventas en el rango seleccionado.</div>`}
+    `;
   },
 
   renderDayReport(rows, el) {
