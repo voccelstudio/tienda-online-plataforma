@@ -35,6 +35,19 @@
   window.addEventListener('hashchange', renderRoute);
   window.addEventListener('DOMContentLoaded', renderRoute);
 
+  const savedTheme = localStorage.getItem('voccela.theme');
+  if (savedTheme === 'dark') {
+    document.documentElement.classList.add('dark');
+    const ic = document.getElementById('themeIcon');
+    if (ic) ic.className = 'fa-solid fa-sun';
+  }
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    const dark = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('voccela.theme', dark ? 'dark' : 'light');
+    const ic = document.getElementById('themeIcon');
+    if (ic) ic.className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+  });
+
   document.getElementById('cartBtn').addEventListener('click', () => Store.openCart());
   document.getElementById('cartOverlay').addEventListener('click', () => Store.closeCart());
   document.querySelectorAll('[data-close-cart]').forEach(b => b.addEventListener('click', () => Store.closeCart()));

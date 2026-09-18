@@ -79,6 +79,23 @@ function init() {
       estimated_date TEXT DEFAULT '',
       delivered_at TEXT DEFAULT ''
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      k TEXT PRIMARY KEY,
+      v TEXT DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS coupons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      type TEXT NOT NULL DEFAULT 'percent',
+      value REAL NOT NULL DEFAULT 0,
+      min_purchase REAL NOT NULL DEFAULT 0,
+      max_uses INTEGER NOT NULL DEFAULT 0,
+      uses INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // migracion de esquemas previos
@@ -88,6 +105,14 @@ function init() {
   const scols = db.prepare('PRAGMA table_info(product_sizes)').all().map(c => c.name);
   if (!scols.includes('last_inbound')) db.exec('ALTER TABLE product_sizes ADD COLUMN last_inbound TEXT');
   db.exec("UPDATE product_sizes SET last_inbound = (SELECT created_at FROM products WHERE id = product_id) WHERE last_inbound IS NULL");
+  const sacols = db.prepare('PRAGMA table_info(sales)').all().map(c => c.name);
+  if (!sacols.includes('payment_method')) db.exec("ALTER TABLE sales ADD COLUMN payment_method TEXT DEFAULT ''");
+  if (!sacols.includes('payment_ref')) db.exec("ALTER TABLE sales ADD COLUMN payment_ref TEXT DEFAULT ''");
+  if (!sacols.includes('payment_status')) db.exec("ALTER TABLE sales ADD COLUMN payment_status TEXT DEFAULT 'pendiente'");
+  if (!sacols.includes('pickup_point')) db.exec("ALTER TABLE sales ADD COLUMN pickup_point TEXT DEFAULT ''");
+  if (!sacols.includes('coupon_code')) db.exec("ALTER TABLE sales ADD COLUMN coupon_code TEXT DEFAULT ''");
+  if (!sacols.includes('coupon_discount')) db.exec("ALTER TABLE sales ADD COLUMN coupon_discount REAL NOT NULL DEFAULT 0");
+  if (!sacols.includes('tax_amount')) db.exec("ALTER TABLE sales ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0");
   const images = {
   'Camiseta Urban Básica': 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop',
   'Hoodie VOCCEL Classic': 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=800&auto=format&fit=crop',
@@ -103,7 +128,6 @@ function init() {
 const updImg = db.prepare('UPDATE products SET image = ? WHERE name = ? AND image LIKE ?');
 for (const [n, u] of Object.entries(images)) updImg.run(u, n, '%placehold%');
 db.exec("UPDATE products SET list_price = price WHERE list_price = 0");
-  const sacols = db.prepare('PRAGMA table_info(sales)').all().map(c => c.name);
   if (!sacols.includes('pickup_date')) db.exec("ALTER TABLE sales ADD COLUMN pickup_date TEXT DEFAULT ''");
   if (!sacols.includes('delivery_date')) db.exec("ALTER TABLE sales ADD COLUMN delivery_date TEXT DEFAULT ''");
 }
@@ -148,5 +172,25 @@ function seedIfEmpty() {
 
 init();
 seedIfEmpty();
+
+if (!db.prepare('SELECT 1 FROM settings WHERE k = ?').get('app')) {
+  db.prepare('INSERT INTO settings (k, v) VALUES (?, ?)').run('app', JSON.stringify({
+    store_name: 'VOCCEL',
+    whatsapp: '',
+    delivery_fee: 20000,
+    free_delivery_over: 0,
+    iva: 0,
+    iva_calc: 'incluido',
+    payment_methods: { efectivo: true, transferencia: true, qr: true },
+    transfer_info: '',
+    qr_info: '',
+    pickup_points: [{ name: 'Tienda VOCCEL', address: '', hours: '' }],
+    pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
+    pending_expire_days: 0
+  }));
+}
+if (!db.prepare('SELECT 1 FROM coupons LIMIT 1').get()) {
+  db.prepare("INSERT INTO coupons (code, type, value) VALUES (?, 'percent', ?)").run('VOCCEL10', 10);
+}
 
 module.exports = db;

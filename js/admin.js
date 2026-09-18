@@ -16,7 +16,9 @@ const Admin = {
     await Promise.all([
       this.loadStats(),
       this.loadInventory(),
-      this.loadOrders()
+      this.loadOrders(),
+      this.loadSettings(),
+      this.loadCoupons()
     ]);
   },
 
@@ -30,6 +32,8 @@ const Admin = {
     this.orders = await API.get(url);
   },
   async loadInventory() { this.inventory = await API.get('/api/inventory'); },
+  async loadSettings() { try { this.settings = await API.get('/api/settings'); } catch (e) { this.settings = null; } },
+  async loadCoupons() { try { this.coupons = await API.get('/api/coupons'); } catch (e) { this.coupons = []; } },
 
   render() {
     const app = document.getElementById('app');
@@ -38,14 +42,15 @@ const Admin = {
       ['inventario', 'boxes-stacked', 'Inventario'],
       ['pedidos', 'clipboard-list', 'Pedidos'],
       ['delivery', 'truck-fast', 'Delivery'],
-      ['reportes', 'chart-line', 'Reportes']
+      ['reportes', 'chart-line', 'Reportes'],
+      ['ajustes', 'sliders', 'Ajustes']
     ];
     app.innerHTML = `
       <div class="container admin-shell">
         <nav class="side-tabs">
           ${tabs.map(([k, icon, label]) => `
             <button class="side-tab ${this.tab === k ? 'active' : ''}" data-atab="${k}">
-              <i class="fa-solid fa-${icon}"></i> ${label}
+              <i class="fa-solid fa-${icon}"></i> ${label}${k === 'pedidos' ? `<span class="tab-badge hidden"></span>` : ''}
             </button>
           `).join('')}
         </nav>
@@ -55,9 +60,12 @@ const Admin = {
           ${this.tab === 'pedidos' ? this.ordersHTML() : ''}
           ${this.tab === 'delivery' ? this.deliveryHTML() : ''}
           ${this.tab === 'reportes' ? this.reportsHTML() : ''}
+          ${this.tab === 'ajustes' ? this.ajustesHTML() : ''}
         </section>
       </div>
     `;
+
+    if (this.tab === 'pedidos') this.checkNewOrders();
 
     app.querySelectorAll('[data-atab]').forEach(b => b.addEventListener('click', () => {
       this.tab = b.dataset.atab;
@@ -70,6 +78,31 @@ const Admin = {
     if (this.tab === 'pedidos') this.ordersBind();
     if (this.tab === 'delivery') this.deliveryBind();
     if (this.tab === 'reportes') { this.reportBind(); this.evalReport(); }
+    if (this.tab === 'ajustes') this.ajustesBind();
+  },
+
+  checkNewOrders() {
+    if (!this.orders.length) return;
+    const last = Math.max(...this.orders.map(o => o.id));
+    const prev = Number(localStorage.getItem('voccela.adminLastSeen') || 0);
+    if (last > prev) {
+      const badge = document.querySelector(`[data-atab="pedidos"] .tab-badge`);
+      if (badge) badge.textContent = last - prev;
+      if (this._notified !== last && prev > 0) {
+        this._notified = last;
+        try {
+          const ctx = new AudioContext();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value = 880; o.type = 'sine';
+          g.gain.setValueAtTime(0.08, ctx.currentTime);
+          o.start();
+          o.stop(ctx.currentTime + 0.18);
+          setTimeout(() => { o.frequency.value = 660; o.stop(ctx.currentTime + 0.28); }, 180);
+        } catch (e) {}
+      }
+    }
   },
 
   // ---------------- DASHBOARD ----------------
@@ -458,7 +491,7 @@ const Admin = {
 
   // ---------------- PEDIDOS ----------------
   ordersHTML() {
-    const statuses = ['all', ...['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado']];
+    const statuses = ['all', ...['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado', 'expirado']];
     return `
       <div class="panel-head">
         <h2><i class="fa-solid fa-clipboard-list"></i> Pedidos</h2>
@@ -486,7 +519,7 @@ const Admin = {
                   <td>${method}</td>
                   <td>${o.items.reduce((a, i) => a + i.quantity, 0)}</td>
                   <td><strong>${money(o.total)}</strong></td>
-                  <td><span class="status ${st}"><i class="fa-solid fa-${st === 'entregado' ? 'box-open' : st === 'enviado' ? 'truck-fast' : st === 'cancelado' ? 'ban' : st === 'confirmado' ? 'check' : 'hourglass-half'}"></i> ${st}</span></td>
+                  <td><span class="status ${st}"><i class="fa-solid fa-${st === 'entregado' ? 'box-open' : st === 'enviado' ? 'truck-fast' : st === 'cancelado' ? 'ban' : st === 'expirado' ? 'clock' : st === 'confirmado' ? 'check' : 'hourglass-half'}"></i> ${st}</span></td>
                   <td><button class="btn btn-sm btn-outline" data-open-order="${o.id}"><i class="fa-solid fa-eye"></i></button></td>
                 </tr>`;
             }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center">Sin pedidos con ese filtro</td></tr>'}
@@ -505,6 +538,12 @@ const Admin = {
       this.statusFilter = e.target.value;
       this.refreshOrders();
     });
+    if (this.orders.length) {
+      const last = Math.max(...this.orders.map(o => o.id));
+      localStorage.setItem('voccela.adminLastSeen', String(last));
+      const badge = document.querySelector(`[data-atab="pedidos"] .tab-badge`);
+      if (badge) badge.classList.add('hidden');
+    }
     document.querySelectorAll('[data-open-order]').forEach(el => {
       el.addEventListener('click', () => this.openOrder(Number(el.dataset.openOrder)));
     });
@@ -521,8 +560,11 @@ const Admin = {
     const box = document.getElementById('orderModalBox');
     overlay.hidden = false;
     box.hidden = false;
-    const statuses = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
-    const statusIcon = { pendiente: 'fa-hourglass-half', confirmado: 'fa-check', enviado: 'fa-truck-fast', entregado: 'fa-box-open', cancelado: 'fa-ban' };
+    const statuses = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado', 'expirado'];
+    const statusIcon = { pendiente: 'fa-hourglass-half', confirmado: 'fa-check', enviado: 'fa-truck-fast', entregado: 'fa-box-open', cancelado: 'fa-ban', expirado: 'fa-clock' };
+    const pmLabel = { efectivo: 'Efectivo', transferencia: 'Transferencia', qr: 'QR / alias' };
+    const waNum = String(o.customer_phone || '').replace(/[^\d]/g, '');
+    const waLink = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent('Hola ' + (o.customer_name || '') + '! Tu pedido #' + o.id + ' en la tienda VOCCEL por ' + money(o.total) + ' está ' + o.status + '.')}` : '';
 
     box.innerHTML = `
       <div class="modal-inner">
@@ -558,11 +600,19 @@ const Admin = {
                 <strong>${money(it.unit_price * it.quantity)}</strong>
               </div>`).join('')}
             <div class="summary-row" style="margin-top:10px"><span>Subtotal</span><span>${money(o.subtotal)}</span></div>
+            ${o.coupon_discount ? `<div class="summary-row" style="color:var(--ok)"><span>Cupón <strong>${esc(o.coupon_code || '')}</strong></span><span>−${money(o.coupon_discount)}</span></div>` : ''}
+            ${o.tax_amount ? `<div class="summary-row"><span>IVA</span><span>${money(o.tax_amount)}</span></div>` : ''}
             <div class="summary-row"><span>Envío</span><span>${o.delivery_method === 'envio' ? money(o.shipping_fee) : 'Sin costo'}</span></div>
             <div class="summary-row total"><span>Total</span><span>${money(o.total)}</span></div>
+            <h3 style="margin-top:14px;font-size:.95rem"><i class="fa-solid fa-money-bill-wave"></i> Pago</h3>
+            <p class="muted"><strong>Método:</strong> ${pmLabel[o.payment_method] || o.payment_method || '—'}</p>
+            ${o.payment_ref ? `<p class="muted"><strong>Referencia:</strong> ${esc(o.payment_ref)}</p>` : ''}
+            <p class="muted" style="margin-top:6px"><span class="status ${o.payment_status === 'pagado' ? 'entregado' : 'pendiente'}">${o.payment_status === 'pagado' ? 'Pagado ✓' : 'Pago pendiente'}</span></p>
           </div>
         </div>
         <div style="display:flex;gap:14px;align-items:center;justify-content:space-between;margin-top:18px;flex-wrap:wrap">
+          <a class="btn btn-sm btn-outline" style="text-decoration:none" ${waLink ? `href="${waLink}" target="_blank" rel="noopener"` : 'disabled'}><i class="fa-brands fa-whatsapp"></i> Contactar al cliente</a>
+          <button class="btn btn-sm ${o.payment_status === 'pagado' ? 'btn-outline' : 'btn-primary'}" id="togglePaid" style="border-radius:10px"><i class="fa-solid fa-hand-holding-dollar"></i> ${o.payment_status === 'pagado' ? 'Marcar como no pagado' : 'Marcar como pagado'}</button>
           <div class="field" style="min-width:220px">
             <label>Cambiar estado del pedido</label>
             <select id="orderStatusSel">
@@ -612,6 +662,16 @@ const Admin = {
         toast('Estado actualizado a ' + st);
         await this.loadOrders();
         await this.loadStats();
+        close();
+        this.render();
+      } catch (e) { toast(e.message, 'err'); }
+    });
+
+    box.querySelector('#togglePaid').addEventListener('click', async () => {
+      try {
+        await API.put('/api/orders/' + o.id, { payment_status: o.payment_status === 'pagado' ? 'pendiente' : 'pagado' });
+        toast(o.payment_status === 'pagado' ? 'Pedido marcado como no pagado' : 'Pedido marcado como pagado');
+        await this.loadOrders();
         close();
         this.render();
       } catch (e) { toast(e.message, 'err'); }
@@ -679,6 +739,152 @@ const Admin = {
     document.getElementById('delFilter').addEventListener('change', e => { this.delFilter = e.target.value; this.render(); });
     document.querySelectorAll('[data-open-order]').forEach(el => {
       el.addEventListener('click', () => this.openOrder(Number(el.dataset.openOrder)));
+    });
+  },
+
+  // ---------------- AJUSTES ----------------
+  ajustesHTML() {
+    const s = this.settings || {};
+    const coupons = this.coupons || [];
+    const ivaPct = Number(s.iva) || 0;
+    const freeOver = Number(s.free_delivery_over) || 0;
+    this._s = s;
+    return `
+      <div class="panel-head"><h2><i class="fa-solid fa-sliders"></i> Ajustes de la tienda</h2>
+        <span class="muted">Precios, envío, pagos, retiros y cupones (se guardan en este navegador)</span>
+      </div>
+      <div class="two-col">
+        <div class="panel-card">
+          <h3><i class="fa-solid fa-shop"></i> Tienda</h3>
+          <div class="form-grid settings-grid">
+            <div class="field"><label>Nombre de la tienda</label><input id="sName" value="${esc(s.store_name || 'VOCCEL')}"></div>
+            <div class="field"><label>WhatsApp / teléfono</label><input id="sWhats" value="${esc(s.whatsapp || '')}" placeholder="+595 981 000 000"></div>
+            <div class="field"><label>Envío domicilio (Gs.)</label><input id="sFee" type="number" min="0" step="1000" value="${Number(s.delivery_fee) || 20000}"></div>
+            <div class="field"><label>Envío gratis desde (Gs., 0 = nunca)</label><input id="sFreeOver" type="number" min="0" step="1000" value="${freeOver}"></div>
+            <div class="field"><label>IVA</label><div class="phone-row"><input id="sIva" type="number" min="0" step="0.5" value="${ivaPct}" style="width:80px"><select id="sIvaCalc">
+              <option value="incluido" ${s.iva_calc !== 'extra' ? 'selected' : ''}>incluido en precio</option>
+              <option value="extra" ${s.iva_calc === 'extra' ? 'selected' : ''}>sumar al total</option>
+            </select></div></div>
+            <div class="field"><label>Expirar pedidos sin confirmar (en días, 0 = nunca)</label><input id="sExpire" type="number" min="0" value="${Number(s.pending_expire_days) || 0}"></div>
+          </div>
+        </div>
+        <div class="panel-card">
+          <h3><i class="fa-solid fa-money-bill-wave"></i> Métodos de pago</h3>
+          ${['efectivo', 'transferencia', 'qr'].map(c => `<label class="check-row"><input type="checkbox" id="sPay_${c}" ${s.payment_methods && s.payment_methods[c] !== false ? 'checked' : ''}> <span>${c.charAt(0).toUpperCase() + c.slice(1)}</span></label>`).join('')}
+          <div class="field"><label>Datos de transferencia</label><textarea id="sTransInfo" placeholder="Banco, alias, titular, CBU...">${esc(s.transfer_info || '')}</textarea></div>
+          <div class="field"><label>Datos de QR / alias</label><textarea id="sQrInfo" placeholder="Alias, link de pago, número para QR...">${esc(s.qr_info || '')}</textarea></div>
+        </div>
+        <div class="panel-card">
+          <h3><i class="fa-solid fa-shop"></i> Puntos de retiro</h3>
+          <div id="sPoints"></div>
+          <button class="btn btn-sm btn-outline" id="sAddPoint" type="button"><i class="fa-solid fa-plus"></i> Agregar punto</button>
+          <h3 style="margin-top:14px"><i class="fa-solid fa-clock"></i> Turnos de visita</h3>
+          <div id="sSlots"></div>
+          <button class="btn btn-sm btn-outline" id="sAddSlot" type="button"><i class="fa-solid fa-plus"></i> Agregar turno</button>
+        </div>
+        <div class="panel-card">
+          <h3><i class="fa-solid fa-ticket"></i> Cupones de descuento</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Código</th><th>Desc.</th><th>Mínimo (Gs.)</th><th>Usos</th><th>Estado</th><th></th></tr></thead>
+              <tbody id="cuponsBody">
+                ${coupons.map(c => `
+                  <tr>
+                    <td><input class="cupon-input" data-k="code" data-id="${c.id}" value="${esc(c.code)}" style="text-transform:uppercase"></td>
+                    <td><div class="phone-row"><input class="cupon-input" type="number" data-k="value" data-id="${c.id}" value="${c.value}" style="width:70px"><select class="cupon-input" data-k="type" data-id="${c.id}">
+                      <option value="percent" ${c.type === 'percent' ? 'selected' : ''}>%</option>
+                      <option value="fixed" ${c.type === 'fixed' ? 'selected' : ''}>Gs.</option>
+                    </select></div></td>
+                    <td><input class="cupon-input" type="number" data-k="min_purchase" data-id="${c.id}" value="${c.min_purchase}" style="width:90px"></td>
+                    <td>${c.uses || 0}/${c.max_uses || '∞'}</td>
+                    <td><label class="check-row"><input type="checkbox" data-k="active" data-id="${c.id}" ${c.active ? 'checked' : ''}> <span>activo</span></label></td>
+                    <td><button class="btn btn-sm btn-danger" data-del-coupon="${c.id}"><i class="fa-solid fa-trash-can"></i></button></td>
+                  </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+            <button class="btn btn-sm btn-outline" id="sAddCoupon" type="button"><i class="fa-solid fa-plus"></i> Agregar cupón</button>
+          </div>
+        </div>
+        <button class="btn btn-accent" id="saveSettings"><i class="fa-solid fa-floppy-disk"></i> Guardar ajustes</button>
+    `;
+  },
+
+  async ajustesBind() {
+    const s = this._s || {};
+    const coupons = this.coupons || [];
+    if (!coupons.length && document.querySelector('#cuponsBody')) document.querySelector('#cuponsBody').innerHTML = '';
+    const points = (s.pickup_points && s.pickup_points.length ? s.pickup_points : [{ name: 'Tienda VOCCEL', address: '', hours: '' }]);
+    const slots = (s.pickup_slots && s.pickup_slots.length ? s.pickup_slots : ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00']);
+    const renderPoints = () => {
+      const wrap = document.getElementById('sPoints');
+      wrap.innerHTML = points.map((p, i) => `
+        <div class="phone-row" style="margin-bottom:8px">
+          <input data-pn="name" data-i="${i}" value="${esc(p.name)}" placeholder="Nombre">
+          <input data-pn="address" data-i="${i}" value="${esc(p.address)}" placeholder="Dirección">
+          <input data-pn="hours" data-i="${i}" value="${esc(p.hours)}" placeholder="Horario" style="width:120px">
+          <button class="icon-btn" data-del-point="${i}"><i class="fa-solid fa-xmark"></i></button>
+        </div>`).join('');
+      wrap.querySelectorAll('[data-pn]').forEach(inp => inp.addEventListener('input', e => points[e.target.dataset.i][e.target.dataset.pn] = e.target.value));
+      wrap.querySelectorAll('[data-del-point]').forEach(b => b.addEventListener('click', () => { points.splice(Number(b.dataset.delPoint), 1); renderPoints(); }));
+    };
+    const renderSlots = () => {
+      const wrap = document.getElementById('sSlots');
+      wrap.innerHTML = slots.map((v, i) => `
+        <div class="phone-row" style="margin-bottom:8px">
+          <input data-sv="1" data-i="${i}" value="${esc(v)}">
+          <button class="icon-btn" data-del-slot="${i}"><i class="fa-solid fa-xmark"></i></button>
+        </div>`).join('');
+      wrap.querySelectorAll('[data-sv]').forEach(inp => inp.addEventListener('input', e => slots[e.target.dataset.i] = e.target.value));
+      wrap.querySelectorAll('[data-del-slot]').forEach(b => b.addEventListener('click', () => { slots.splice(Number(b.dataset.delSlot), 1); renderSlots(); }));
+    };
+    renderPoints(); renderSlots();
+    document.getElementById('sAddPoint').addEventListener('click', () => { points.push({ name: '', address: '', hours: '' }); renderPoints(); });
+    document.getElementById('sAddSlot').addEventListener('click', () => { slots.push(''); renderSlots(); });
+
+    document.getElementById('sAddCoupon').addEventListener('click', async () => {
+      const r = await API.post('/api/coupons', { code: 'VOCCEL' + (Date.now() % 1000), type: 'percent', value: 10 });
+      this.coupons = null;
+      this.render();
+      toast('Cupón creado: ' + r.code);
+    });
+    document.querySelectorAll('[data-del-coupon]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Eliminar el cupón?')) return;
+      await API.del('/api/coupons/' + b.dataset.delCoupon);
+      this.coupons = null;
+      this.render();
+    }));
+    document.querySelectorAll('.cupon-input').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const id = inp.dataset.id, k = inp.dataset.k;
+        let v = inp.type === 'number' ? Number(inp.value) || 0 : inp.value;
+        if (k === 'active') v = inp.checked;
+        await API.put('/api/coupons/' + id, { [k]: v });
+        this.coupons = null;
+        toast('Cupón actualizado');
+      });
+    });
+
+    document.getElementById('saveSettings').addEventListener('click', async () => {
+      const buf = {
+        store_name: document.getElementById('sName').value.trim() || 'VOCCEL',
+        whatsapp: document.getElementById('sWhats').value.trim(),
+        delivery_fee: Number(document.getElementById('sFee').value) || 0,
+        free_delivery_over: Number(document.getElementById('sFreeOver').value) || 0,
+        iva: Number(document.getElementById('sIva').value) || 0,
+        iva_calc: document.getElementById('sIvaCalc').value,
+        pending_expire_days: Math.max(0, Number(document.getElementById('sExpire').value) || 0),
+        payment_methods: { efectivo: document.getElementById('sPay_efectivo').checked, transferencia: document.getElementById('sPay_transferencia').checked, qr: document.getElementById('sPay_qr').checked },
+        transfer_info: document.getElementById('sTransInfo').value,
+        qr_info: document.getElementById('sQrInfo').value,
+        pickup_points: points.map(p => ({ name: p.name || 'Punto', address: p.address || '', hours: p.hours || '' })),
+        pickup_slots: slots.map(v => v.trim()).filter(Boolean)
+      };
+      try {
+        await API.put('/api/settings', buf);
+        this.settings = null;
+        toast('Ajustes guardados');
+      } catch (e) { toast(e.message, 'err'); }
     });
   },
 

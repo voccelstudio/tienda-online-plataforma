@@ -18,9 +18,52 @@ const IMAGE_BY_NAME = {
   'Camisa Oxford Formal': 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=800&auto=format&fit=crop',
   'Leggings Deportivos Alta Compresión': 'https://images.unsplash.com/photo-1506629082955-511b1aa562c8?q=80&w=800&auto=format&fit=crop'
 };
-  const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
+  const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado', 'expirado'];
   const DELIVERY_STATUSES = ['pendiente', 'en_reparto', 'entregado', 'devuelto'];
   const DISCOUNT_OPTIONS = [0, 10, 20, 30, 40];
+
+  const DEFAULT_SETTINGS = {
+    store_name: 'VOCCEL',
+    whatsapp: '+595981000000',
+    delivery_fee: 20000,
+    free_delivery_over: 0,
+    iva: 0,
+    iva_calc: 'incluido',
+    payment_methods: { efectivo: true, transferencia: true, qr: true },
+    transfer_info: 'Transferencia bancaria: Banco Pyme · Cta. 12345678 · Titular: VOCCEL S.A.',
+    qr_info: 'Te enviamos el QR y alias de pago al confirmar el pedido.',
+    pickup_points: [{ name: 'Tienda VOCCEL', address: 'Av. Principal 123, Asunción', hours: 'Lun-Sáb 9:00 - 19:00' }],
+    pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
+    pending_expire_days: 0
+  };
+  function settingsJSON() {
+    const s = Object.assign({}, DEFAULT_SETTINGS, db.settings || {});
+    return { store_name: s.store_name, whatsapp: s.whatsapp, delivery_fee: s.delivery_fee, free_delivery_over: s.free_delivery_over, iva: s.iva, iva_calc: s.iva_calc, payment_methods: s.payment_methods, transfer_info: s.transfer_info, qr_info: s.qr_info, pickup_points: s.pickup_points || [], pickup_slots: s.pickup_slots || [], pending_expire_days: s.pending_expire_days };
+  }
+  function fmtGs(n) { return 'Gs. ' + Math.round(n || 0).toLocaleString('es-PY'); }
+  function validateCoupon(code, subtotal) {
+    if (!code) return null;
+    const c = (db.coupons || []).find(x => x.code.toLowerCase() === String(code).trim().toLowerCase());
+    if (!c || !c.active) throwErr('Cupón no válido');
+    if (c.max_uses && (c.uses || 0) >= c.max_uses) throwErr('Cupón agotado');
+    if (c.min_purchase && subtotal < c.min_purchase) throwErr('El cupón requiere un mínimo de ' + fmtGs(c.min_purchase));
+    const discount = c.type === 'percent'
+      ? Math.round(subtotal * Math.min(100, c.value) / 100)
+      : Math.min(subtotal, c.value);
+    return { code: c.code, discount, coupon_id: c.id, percent: c.type === 'percent' ? c.value : null };
+  }
+  function ts(dt) { const t = new Date((dt || '').replace(' ', 'T')); return isNaN(t.getTime()) ? 0 : t.getTime(); }
+  function housekeeping() {
+    const days = Number((db.settings || {}).pending_expire_days) || 0;
+    let changed = false;
+    if (days > 0) {
+      const limit = Date.now() - days * 86400000;
+      for (const s of db.sales) {
+        if ((s.status === 'pendiente' || s.status === 'confirmado') && ts(s.created_at) && ts(s.created_at) < limit) { s.status = 'expirado'; changed = true; }
+      }
+    }
+    if (changed) save(db);
+  }
 
   const SEED_PRODUCTS = [
     { name: 'Camiseta Urban Básica', category: 'Camisetas', list_price: 199000, image: IMAGE_BY_NAME['Camiseta Urban Básica'], description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
@@ -114,6 +157,11 @@ const IMAGE_BY_NAME = {
   }
 
   const db = load();
+  db.settings = Object.assign({}, DEFAULT_SETTINGS, db.settings || {});
+  db.coupons = db.coupons || [];
+  db.nextCouponId = db.nextCouponId || 1;
+  save(db);
+  housekeeping();
 
   function getSizes(productId) {
     const rank = { S: 1, M: 2, L: 3, XL: 4 };
@@ -219,7 +267,7 @@ const IMAGE_BY_NAME = {
     if (method === 'POST' && path === '/api/checkout') {
       if (!body || !body.customer_name) throwErr('customer_name es obligatorio');
       if (!Array.isArray(body.items) || !body.items.length) throwErr('El carrito está vacío');
-      const shippingFee = body.delivery_method === 'retiro' ? 0 : SHIPPING;
+      const s = db.settings;
       let subtotal = 0;
       const detail = [];
       for (const it of body.items) {
@@ -229,25 +277,79 @@ const IMAGE_BY_NAME = {
         const prod = db.products.find(x => x.id === pid && x.active);
         if (!prod) throwErr(`Producto #${pid} no disponible`);
         if (!size) throwErr(`Faltó seleccionar talla de ${prod.name}`);
-        const row = db.sizes.find(s => s.product_id === pid && s.size === size);
+        const row = db.sizes.find(x => x.product_id === pid && x.size === size);
         const available = row ? row.stock : 0;
         if (!row || available < qty) throwErr(`Stock insuficiente para "${prod.name}" talla ${size}. Disponible: ${available}`);
         detail.push({ prod, size, qty });
         subtotal += effPrice(prod) * qty;
       }
-      const total = Math.round((subtotal + shippingFee) * 100) / 100;
+      subtotal = Math.round(subtotal * 100) / 100;
+      const couponInfo = body.coupon ? validateCoupon(body.coupon, subtotal) : null;
+      const couponDiscount = couponInfo ? couponInfo.discount : 0;
+      const net = subtotal - couponDiscount;
+      const isRetiro = body.delivery_method === 'retiro';
+      let shippingFee = 0;
+      if (!isRetiro) {
+        shippingFee = (Number(s.free_delivery_over) > 0 && net >= Number(s.free_delivery_over)) ? 0 : Number(s.delivery_fee);
+      }
+      const taxAmount = Number(s.iva) > 0 && s.iva_calc === 'extra' ? Math.round(net * Number(s.iva) / 100) : 0;
+      const total = Math.round((net + shippingFee + taxAmount) * 100) / 100;
+      const paymentMethod = ['efectivo', 'transferencia', 'qr'].includes(body.payment_method) ? body.payment_method : 'efectivo';
+      const pickupDate = body.pickup_date || (body.pickup_day ? `${body.pickup_day} ${body.pickup_slot || ''}`.trim() : '');
       const saleId = db.nextSaleId++;
-      db.sales.push({ id: saleId, customer_name: body.customer_name, customer_phone: body.customer_phone || '', customer_email: body.customer_email || '', address: body.delivery_method === 'retiro' ? '' : (body.address || ''), delivery_method: body.delivery_method || 'envio', shipping_fee: shippingFee, status: 'pendiente', subtotal, total, notes: body.notes || '', pickup_date: body.pickup_date || '', delivery_date: body.delivery_date || '', created_at: now() });
+      db.sales.push({ id: saleId, customer_name: body.customer_name, customer_phone: body.customer_phone || '', customer_email: body.customer_email || '', address: isRetiro ? '' : (body.address || ''), delivery_method: body.delivery_method || 'envio', shipping_fee: shippingFee, status: 'pendiente', subtotal, total, notes: body.notes || '', pickup_date: pickupDate, delivery_date: body.delivery_date || '', pickup_point: isRetiro ? (body.pickup_point || '') : '', payment_method: paymentMethod, payment_ref: body.payment_ref || '', payment_status: paymentMethod === 'efectivo' ? 'pendiente' : 'pendiente', coupon_code: couponInfo ? couponInfo.code : '', coupon_discount: couponDiscount, tax_amount: taxAmount, created_at: now() });
       for (const d of detail) {
         db.sale_items.push({ sale_id: saleId, product_id: d.prod.id, product_name: d.prod.name, size: d.size, quantity: d.qty, unit_price: effPrice(d.prod) });
-        db.sizes.find(s => s.product_id === d.prod.id && s.size === d.size).stock -= d.qty;
+        db.sizes.find(x => x.product_id === d.prod.id && x.size === d.size).stock -= d.qty;
         logMove(d.prod.id, d.size, 'salida', d.qty, `Venta pedido #${saleId}`);
       }
-      if (body.delivery_method === 'envio') {
+      if (couponInfo) {
+        const c = db.coupons.find(x => x.id === couponInfo.coupon_id);
+        if (c) { c.uses = (c.uses || 0) + 1; }
+      }
+      if (!isRetiro) {
         db.deliveries.push({ sale_id: saleId, courier: '', tracking_number: '', status: 'pendiente', estimated_date: '', delivered_at: '' });
       }
       save(db);
-      return { ok: true, sale_id: saleId, subtotal, shipping_fee: shippingFee, total, message: 'Pedido registrado. Se actualizó el inventario automáticamente.' };
+      return { ok: true, sale_id: saleId, subtotal, shipping_fee: shippingFee, tax_amount: taxAmount, coupon_discount: couponDiscount, total, message: 'Pedido registrado. Se actualizó el inventario automáticamente.' };
+    }
+
+    // SETTINGS
+    if (method === 'GET' && path === '/api/settings') return settingsJSON();
+    if (method === 'PUT' && path === '/api/settings') {
+      const s = Object.assign({}, DEFAULT_SETTINGS, db.settings || {}, body || {});
+      db.settings = s;
+      save(db);
+      return settingsJSON();
+    }
+
+    // COUPONS
+    if (method === 'GET' && path === '/api/coupons') return db.coupons;
+    if (method === 'GET' && path === '/api/coupons/validate') {
+      const c = validateCoupon(q.get('code'), Number(q.get('subtotal')) || 0);
+      return { ok: true, code: c.code, discount: c.discount, percent: c.percent };
+    }
+    if (method === 'POST' && path === '/api/coupons') {
+      if (!body || !body.code) throwErr('Falta el código del cupón');
+      const id = db.nextCouponId++;
+      const c = { id, code: String(body.code).trim().toUpperCase(), type: body.type === 'fixed' ? 'fixed' : 'percent', value: Math.max(0, Number(body.value) || 0), min_purchase: Number(body.min_purchase) || 0, max_uses: Number(body.max_uses) || 0, uses: 0, active: body.active !== false, created_at: now() };
+      db.coupons.push(c);
+      save(db);
+      return c;
+    }
+    let cm = path.match(/^\/api\/coupons\/(\d+)$/);
+    if (cm && (method === 'PUT' || method === 'DELETE')) {
+      const c = db.coupons.find(x => x.id === Number(cm[1]));
+      if (!c) throwErr('Cupón no encontrado');
+      if (method === 'DELETE') { db.coupons = db.coupons.filter(x => x.id !== c.id); save(db); return { ok: true }; }
+      if (body.code !== undefined) c.code = String(body.code).trim().toUpperCase();
+      if (body.type !== undefined) c.type = body.type === 'fixed' ? 'fixed' : 'percent';
+      if (body.value !== undefined) c.value = Math.max(0, Number(body.value) || 0);
+      if (body.min_purchase !== undefined) c.min_purchase = Number(body.min_purchase) || 0;
+      if (body.max_uses !== undefined) c.max_uses = Number(body.max_uses) || 0;
+      if (body.active !== undefined) c.active = !!body.active;
+      save(db);
+      return c;
     }
 
     // MOVEMENTS (datos de entrada/salida)
@@ -304,6 +406,8 @@ const IMAGE_BY_NAME = {
       if (b.pickup_date !== undefined) o.pickup_date = b.pickup_date;
       if (b.delivery_date !== undefined) o.delivery_date = b.delivery_date;
       if (b.shipping_fee !== undefined) o.shipping_fee = b.shipping_fee;
+      if (b.payment_status !== undefined) o.payment_status = b.payment_status === 'pagado' ? 'pagado' : 'pendiente';
+      if (b.payment_ref !== undefined) o.payment_ref = b.payment_ref;
       save(db);
       return saleJSON(o.id);
     }

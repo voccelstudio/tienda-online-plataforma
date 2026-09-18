@@ -9,9 +9,52 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const SHIPPING_FEE_ENVIO = 20000;
-const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
+const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado', 'expirado'];
 const DELIVERY_STATUSES = ['pendiente', 'en_reparto', 'entregado', 'devuelto'];
 const DISCOUNT_OPTIONS = [0, 10, 20, 30, 40];
+
+const DEFAULT_SETTINGS = {
+  store_name: 'VOCCEL',
+  whatsapp: '',
+  delivery_fee: 20000,
+  free_delivery_over: 0,
+  iva: 0,
+  iva_calc: 'incluido',
+  payment_methods: { efectivo: true, transferencia: true, qr: true },
+  transfer_info: '',
+  qr_info: '',
+  pickup_points: [{ name: 'Tienda VOCCEL', address: '', hours: '' }],
+  pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
+  pending_expire_days: 0
+};
+
+function getSettings() {
+  const row = db.prepare('SELECT v FROM settings WHERE k = ?').get('app');
+  if (!row) return { ...DEFAULT_SETTINGS };
+  try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(row.v || '{}')); } catch (e) { return { ...DEFAULT_SETTINGS }; }
+}
+function putSettings(patch) {
+  const merged = Object.assign({}, getSettings(), patch || {});
+  db.prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')
+    .run('app', JSON.stringify(merged));
+  return merged;
+}
+function validateCoupon(code, subtotal) {
+  const c = db.prepare('SELECT * FROM coupons WHERE code = ?').get(String(code || '').trim().toUpperCase());
+  if (!c || !c.active) { const e = new Error('El cupón no existe o está desactivado'); e.status = 400; throw e; }
+  if (c.max_uses > 0 && c.uses >= c.max_uses) { const e = new Error('El cupón ya llegó a su límite de usos'); e.status = 400; throw e; }
+  if (subtotal < c.min_purchase) { const e = new Error(`El cupón requiere un mínimo de compra de ${moneyGs(c.min_purchase)}`); e.status = 400; throw e; }
+  const discount = c.type === 'fixed' ? Math.min(c.value, subtotal) : Math.round(subtotal * c.value / 100);
+  return { code: c.code, coupon_id: c.id, discount, percent: c.type === 'percent' };
+}
+function moneyGs(n) { return 'Gs. ' + Math.round(n).toLocaleString('es-PY'); }
+function housekeeping() {
+  const s = getSettings();
+  const days = Number(s.pending_expire_days) || 0;
+  if (days <= 0) return;
+  const limit = new Date(Date.now() - days * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare("UPDATE sales SET status = 'expirado' WHERE status IN ('pendiente','confirmado') AND created_at < ?").run(limit);
+}
 
 function effPrice(row) {
   const d = Math.max(0, Math.min(40, Number(row.discount) || 0));
@@ -147,11 +190,12 @@ app.delete('/api/products/:id', (req, res) => {
 // ---------- CHECKOUT (descuenta stock automaticamente) ----------
 
 app.post('/api/checkout', (req, res) => {
-  const { customer_name, customer_phone = '', customer_email = '', address = '', delivery_method = 'envio', notes = '', pickup_date = '', delivery_date = '', items = [] } = req.body || {};
+  const { customer_name, customer_phone = '', customer_email = '', address = '', delivery_method = 'envio', notes = '', pickup_date = '', delivery_date = '', pickup_point = '', payment_method = 'efectivo', payment_ref = '', coupon = '', items = [] } = req.body || {};
   if (!customer_name) return res.status(400).json({ error: 'customer_name es obligatorio' });
   if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'El carrito está vacío' });
 
-  const shippingFee = delivery_method === 'retiro' ? 0 : SHIPPING_FEE_ENVIO;
+  const settings = getSettings();
+  const isRetiro = delivery_method === 'retiro';
 
   try {
     db.exec('BEGIN IMMEDIATE');
@@ -166,7 +210,7 @@ app.post('/api/checkout', (req, res) => {
       const pid = Number(it.product_id);
       const size = String(it.size || '').trim();
       const qty = Math.max(1, Math.floor(Number(it.quantity) || 1));
-      const prod = db.prepare('SELECT id, name, price FROM products WHERE id = ? AND active = 1').get(pid);
+      const prod = db.prepare('SELECT id, name, price, list_price, discount FROM products WHERE id = ? AND active = 1').get(pid);
       if (!prod) { db.exec('ROLLBACK'); return res.status(400).json({ error: `Producto #${pid} no disponible` }); }
       if (!size) { db.exec('ROLLBACK'); return res.status(400).json({ error: `Faltó seleccionar talla de ${prod.name}` }); }
       const row = getStock.get(pid, size);
@@ -181,12 +225,35 @@ app.post('/api/checkout', (req, res) => {
       subtotal += effPrice(prod) * qty;
     }
 
-    const total = subtotal + shippingFee;
+    let couponDiscount = 0;
+    let couponObj = null;
+    if (coupon) {
+      try {
+        couponObj = validateCoupon(coupon, subtotal);
+        couponDiscount = couponObj.discount;
+      } catch (e) {
+        db.exec('ROLLBACK');
+        return res.status(e.status || 400).json({ error: e.message });
+      }
+    }
+    const net = subtotal - couponDiscount;
+    let shippingFee = 0;
+    if (!isRetiro) {
+      shippingFee = (Number(settings.free_delivery_over) > 0 && net >= Number(settings.free_delivery_over)) ? 0 : Number(settings.delivery_fee);
+    }
+    const taxAmount = Number(settings.iva) > 0 && settings.iva_calc === 'extra' ? Math.round(net * Number(settings.iva) / 100) : 0;
+    const total = net + shippingFee + taxAmount;
+
+    const sale = isRetiro ? pickup_date : delivery_date;
     const insSale = db.prepare(`
-      INSERT INTO sales (customer_name, customer_phone, customer_email, address, delivery_method, shipping_fee, status, subtotal, total, notes, pickup_date, delivery_date)
-      VALUES (?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?)
+      INSERT INTO sales (customer_name, customer_phone, customer_email, address, delivery_method, shipping_fee, status, subtotal, total, notes, pickup_date, delivery_date, pickup_point, payment_method, payment_ref, payment_status, coupon_code, coupon_discount, tax_amount)
+      VALUES (?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)
     `);
-    const saleRes = insSale.run(customer_name, customer_phone, customer_email, address, delivery_method, shippingFee, subtotal, total, notes, pickup_date, delivery_date);
+    const saleRes = insSale.run(
+      customer_name, customer_phone, customer_email, isRetiro ? '' : address, delivery_method, shippingFee, subtotal, total, notes,
+      isRetiro ? pickup_date : '', isRetiro ? '' : delivery_date, isRetiro ? pickup_point : '',
+      payment_method, payment_ref, couponObj ? couponObj.code : '', couponDiscount, taxAmount
+    );
     const saleId = Number(saleRes.lastInsertRowid);
 
     for (const d of detail) {
@@ -194,8 +261,10 @@ app.post('/api/checkout', (req, res) => {
       updStock.run(d.qty, d.product.id, d.size);
       logMove(d.product.id, d.size, 'salida', d.qty, `Venta pedido #${saleId}`);
     }
-
-    if (delivery_method === 'envio') {
+    if (couponObj) {
+      db.prepare('UPDATE coupons SET uses = uses + 1 WHERE id = ?').run(couponObj.coupon_id);
+    }
+    if (!isRetiro) {
       db.prepare('INSERT INTO deliveries (sale_id, status) VALUES (?, ?)').run(saleId, 'pendiente');
     }
 
@@ -206,6 +275,8 @@ app.post('/api/checkout', (req, res) => {
       sale_id: saleId,
       subtotal,
       shipping_fee: shippingFee,
+      tax_amount: taxAmount,
+      coupon_discount: couponDiscount,
       total,
       message: 'Pedido registrado. Se actualizó el inventario automáticamente.'
     });
@@ -226,6 +297,7 @@ function saleDetail(saleId) {
 }
 
 app.get('/api/orders', (req, res) => {
+  housekeeping();
   const { status, q } = req.query;
   let sql = 'SELECT * FROM sales WHERE 1=1';
   const params = [];
@@ -277,8 +349,76 @@ app.put('/api/orders/:id', (req, res) => {
   if (b.notes !== undefined) db.prepare('UPDATE sales SET notes = ? WHERE id = ?').run(b.notes, sale.id);
   if (b.pickup_date !== undefined) db.prepare('UPDATE sales SET pickup_date = ? WHERE id = ?').run(b.pickup_date, sale.id);
   if (b.delivery_date !== undefined) db.prepare('UPDATE sales SET delivery_date = ? WHERE id = ?').run(b.delivery_date, sale.id);
+  if (b.pickup_point !== undefined) db.prepare('UPDATE sales SET pickup_point = ? WHERE id = ?').run(b.pickup_point, sale.id);
+  if (b.payment_status !== undefined) db.prepare('UPDATE sales SET payment_status = ? WHERE id = ?').run(b.payment_status === 'pagado' ? 'pagado' : 'pendiente', sale.id);
+  if (b.payment_ref !== undefined) db.prepare('UPDATE sales SET payment_ref = ? WHERE id = ?').run(b.payment_ref, sale.id);
 
   res.json(saleDetail(sale.id));
+});
+
+// ---------- SETTINGS ----------
+
+app.get('/api/settings', (req, res) => res.json(getSettings()));
+
+app.put('/api/settings', (req, res) => {
+  res.json(putSettings(req.body || {}));
+});
+
+// ---------- COUPONS ----------
+
+app.get('/api/coupons', (req, res) => {
+  res.json(db.prepare('SELECT * FROM coupons ORDER BY id DESC').all());
+});
+
+app.get('/api/coupons/validate', (req, res) => {
+  const subtotal = Number(req.query.subtotal) || 0;
+  try {
+    const c = validateCoupon(req.query.code, subtotal);
+    res.json({ ok: true, code: c.code, discount: c.discount, percent: c.percent });
+  } catch (e) {
+    res.status(e.status || 400).json({ error: e.message });
+  }
+});
+
+app.post('/api/coupons', (req, res) => {
+  const b = req.body || {};
+  if (!b.code) return res.status(400).json({ error: 'Falta el código del cupón' });
+  try {
+    const r = db.prepare('INSERT INTO coupons (code, type, value, min_purchase, max_uses, active) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(String(b.code).trim().toUpperCase(), b.type === 'fixed' ? 'fixed' : 'percent', Math.max(0, Number(b.value) || 0), Number(b.min_purchase) || 0, Number(b.max_uses) || 0, b.active === false ? 0 : 1);
+    res.status(201).json(db.prepare('SELECT * FROM coupons WHERE id = ?').get(Number(r.lastInsertRowid)));
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.put('/api/coupons/:id', (req, res) => {
+  const c = db.prepare('SELECT * FROM coupons WHERE id = ?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Cupón no encontrado' });
+  const b = req.body || {};
+  const upd = [];
+  if (b.code !== undefined) upd.push('code = ?');
+  if (b.type !== undefined) upd.push('type = ?');
+  if (b.value !== undefined) upd.push('value = ?');
+  if (b.min_purchase !== undefined) upd.push('min_purchase = ?');
+  if (b.max_uses !== undefined) upd.push('max_uses = ?');
+  if (b.active !== undefined) upd.push('active = ?');
+  if (!upd.length) return res.json(c);
+  const vals = [];
+  if (b.code !== undefined) vals.push(String(b.code).trim().toUpperCase());
+  if (b.type !== undefined) vals.push(b.type === 'fixed' ? 'fixed' : 'percent');
+  if (b.value !== undefined) vals.push(Math.max(0, Number(b.value) || 0));
+  if (b.min_purchase !== undefined) vals.push(Number(b.min_purchase) || 0);
+  if (b.max_uses !== undefined) vals.push(Number(b.max_uses) || 0);
+  if (b.active !== undefined) vals.push(b.active ? 1 : 0);
+  vals.push(c.id);
+  db.prepare('UPDATE coupons SET ' + upd.join(', ') + ' WHERE id = ?').run(...vals);
+  res.json(db.prepare('SELECT * FROM coupons WHERE id = ?').get(c.id));
+});
+
+app.delete('/api/coupons/:id', (req, res) => {
+  db.prepare('DELETE FROM coupons WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // ---------- DELIVERY ----------
@@ -429,6 +569,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.ht
 app.get('/panel', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, () => {
+  housekeeping();
   console.log(`Tienda VOCCEL corriendo en http://localhost:${PORT}`);
   console.log(`  - Tienda:      http://localhost:${PORT}/#/tienda`);
   console.log(`  - Panel admin: http://localhost:${PORT}/#/panel`);

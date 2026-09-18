@@ -315,3 +315,52 @@ td .thumb-sm img { width: 100%; height: 100%; object-fit: cover; }
 
 /* ---------- Panel de movimiento de stock ---------- */
 .mvtools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+/* ---------- Tema oscuro ---------- */
+html.dark {
+  --bg: #101216;
+  --surface: #1a1d24;
+  --ink: #e8e9ec;
+  --muted: #9aa0ab;
+  --line: #2b2f39;
+  --accent: #f59e0b;
+  --accent-2: #fbbf24;
+  --brand: #05060a;
+  --brand-2: #151923;
+  --ok: #4ade80;
+  --warn: #f59e0b;
+  --danger: #f87171;
+  --info: #60a5fa;
+  --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 20px 60px rgba(0, 0, 0, .6);
+}
+html.dark .hero { background: linear-gradient(120deg, #08090d 0%, #151923 60%, #241a10 100%); }
+html.dark .mo-col .track { background: #15171c; }
+html.dark .age-chip.mid { background: #3a2a12; color: #fbbf24; }
+html.dark .age-chip.old { background: #3d1414; color: #fca5a5; }
+html.dark .mv.entrada { background: #10251a; color: #6ee7a0; }
+html.dark .mv.salida { background: #2b1111; color: #fca5a5; }
+html.dark .mv.ajuste { background: #131d36; color: #93c5fd; }
+html.dark .mv.devolucion { background: #2a1233; color: #e9b4f7; }
+
+/* ---------- Nuevos estilos: checkout / ajustes / notif ---------- */
+.phone-row { display: flex; gap: 8px; }
+.phone-row select { width: 90px; flex-shrink: 0; }
+.check-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-weight: 600; cursor: pointer; }
+.check-row input { width: 18px; height: 18px; }
+.methods { display: flex; flex-direction: column; gap: 6px; }
+.method { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 11px 12px; border: 1.5px solid var(--line); border-radius: 11px; font-weight: 700; font-size: .9rem; background: var(--surface); color: var(--ink); }
+.method small { font-weight: 600; color: var(--muted); margin-left: auto; }
+.method.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent); }
+.method.active small { color: inherit; }
+.tab-badge { display: inline-grid; place-items: center; min-width: 17px; height: 17px; border-radius: 9px; background: var(--danger); color: #fff; font-size: .68rem; font-weight: 800; margin-left: 6px; padding: 0 4px; }
+.tab-badge.hidden { display: none; }
+.btn-danger { background: #fee2e2; color: var(--danger); }
+html.dark .btn-danger { background: #2b1111; }
+.status.expirado { background: #e2e8f0; color: #475569; }
+html.dark .status.expirado { background: #1f2733; color: #94a3b8; }
+.settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.order-success { text-align: center; padding-top: 14px; }
+.order-success .big { font-size: 3rem; color: var(--ok); }
+.order-success h3 { margin-top: 6px; }
+.order-success .oid { font-size: 1.6rem; font-weight: 900; letter-spacing: .08em; color: var(--accent); margin: 6px 0; }
