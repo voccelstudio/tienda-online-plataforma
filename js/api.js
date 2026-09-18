@@ -30,8 +30,8 @@ const API = {
   del(url) { return API.request('DELETE', url); }
 };
 
-const fmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'USD' });
-function money(n) { return fmt.format(Number(n || 0)); }
+const fmt = new Intl.NumberFormat('es-PY', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+function money(n) { return 'Gs. ' + fmt.format(Math.round(Number(n || 0))); }
 
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

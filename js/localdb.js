@@ -3,23 +3,23 @@
    store.js y admin.js funcionen sin cambios. v2: descuentos,
    movimientos de stock, antiguedad y reportes mensuales. */
 const LocalDB = (() => {
-  const KEY = 'voccela.db.v2';
-  const SHIPPING = 5.0;
+const KEY = 'voccela.db.v3';
+const SHIPPING = 20000;
   const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
   const DELIVERY_STATUSES = ['pendiente', 'en_reparto', 'entregado', 'devuelto'];
   const DISCOUNT_OPTIONS = [0, 10, 20, 30, 40];
 
   const SEED_PRODUCTS = [
-    { name: 'Camiseta Urban Básica', category: 'Camisetas', list_price: 19.99, image: 'https://placehold.co/600x800/1f2937/ffffff?text=Camiseta', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
-    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', list_price: 49.99, image: 'https://placehold.co/600x800/0f172a/ffffff?text=Hoodie', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
-    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', list_price: 59.99, image: 'https://placehold.co/600x800/1e3a8a/ffffff?text=Jean', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
-    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', list_price: 79.99, image: 'https://placehold.co/600x800/111827/ffffff?text=Bomber', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
-    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', list_price: 29.99, image: 'https://placehold.co/600x800/14532d/ffffff?text=Polo', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
-    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', list_price: 54.99, image: 'https://placehold.co/600x800/3f3f46/ffffff?text=Cargo', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
-    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', list_price: 69.99, image: 'https://placehold.co/600x800/334155/ffffff?text=Chaleco', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
-    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', list_price: 45.99, image: 'https://placehold.co/600x800/4c1d95/ffffff?text=Oversize', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
-    { name: 'Camisa Oxford Formal', category: 'Camisetas', list_price: 39.99, image: 'https://placehold.co/600x800/7f1d1d/ffffff?text=Oxford', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
-    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', list_price: 34.99, image: 'https://placehold.co/600x800/155e75/ffffff?text=Leggings', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
+    { name: 'Camiseta Urban Básica', category: 'Camisetas', list_price: 199000, image: 'https://placehold.co/600x800/1f2937/ffffff?text=Camiseta', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
+    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', list_price: 449000, image: 'https://placehold.co/600x800/0f172a/ffffff?text=Hoodie', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
+    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', list_price: 549000, image: 'https://placehold.co/600x800/1e3a8a/ffffff?text=Jean', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
+    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', list_price: 749000, image: 'https://placehold.co/600x800/111827/ffffff?text=Bomber', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
+    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', list_price: 279000, image: 'https://placehold.co/600x800/14532d/ffffff?text=Polo', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
+    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', list_price: 499000, image: 'https://placehold.co/600x800/3f3f46/ffffff?text=Cargo', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
+    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', list_price: 649000, image: 'https://placehold.co/600x800/334155/ffffff?text=Chaleco', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
+    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', list_price: 419000, image: 'https://placehold.co/600x800/4c1d95/ffffff?text=Oversize', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
+    { name: 'Camisa Oxford Formal', category: 'Camisetas', list_price: 359000, image: 'https://placehold.co/600x800/7f1d1d/ffffff?text=Oxford', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
+    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', list_price: 319000, image: 'https://placehold.co/600x800/155e75/ffffff?text=Leggings', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
   ];
   const SIZES = ['S', 'M', 'L', 'XL'];
 
@@ -51,17 +51,30 @@ const LocalDB = (() => {
     if (raw) {
       try {
         const db = JSON.parse(raw);
-        if (db.v >= 2) return db;
-        // migracion v1 -> v2
-        db.v = 2;
-        db.nextMoveId = db.nextMoveId || 1;
-        db.movements = db.movements || [];
+        if (db.v >= 3) return db;
+        // migracion v1/v2 -> v3: guaranies
+        if (db.v < 2) {
+          db.nextMoveId = db.nextMoveId || 1;
+          db.movements = db.movements || [];
+          (db.products || []).forEach(p => {
+            if (p.discount === undefined) p.discount = 0;
+            if (!p.list_price) p.list_price = p.price;
+          });
+          (db.sizes || []).forEach(s => { if (!s.last_inbound) s.last_inbound = now(); });
+          try { localStorage.removeItem('voccela.db.v1'); } catch (e) {}
+        }
+        // conversion aproximada USD -> PYG
+        const FACTOR = 7300;
         (db.products || []).forEach(p => {
-          if (p.discount === undefined) p.discount = 0;
-          if (!p.list_price) p.list_price = p.price;
+          if (p.price > 0 && p.price < 10000) {
+            p.list_price = Math.round((p.list_price || p.price) * FACTOR);
+            p.price = Math.round(p.price * FACTOR);
+          }
         });
+        (db.sale_items || []).forEach(it => { it.unit_price = Math.round(it.unit_price * FACTOR); });
+        (db.sales || []).forEach(s => { s.subtotal = Math.round(s.subtotal * FACTOR); s.total = Math.round(s.total * FACTOR); });
         (db.sizes || []).forEach(s => { if (!s.last_inbound) s.last_inbound = now(); });
-        try { localStorage.removeItem('voccela.db.v1'); } catch (e) {}
+        db.v = 3;
         save(db);
         return db;
       } catch (e) {}
@@ -207,7 +220,7 @@ const LocalDB = (() => {
       }
       const total = Math.round((subtotal + shippingFee) * 100) / 100;
       const saleId = db.nextSaleId++;
-      db.sales.push({ id: saleId, customer_name: body.customer_name, customer_phone: body.customer_phone || '', customer_email: body.customer_email || '', address: body.delivery_method === 'retiro' ? '' : (body.address || ''), delivery_method: body.delivery_method || 'envio', shipping_fee: shippingFee, status: 'pendiente', subtotal, total, notes: body.notes || '', created_at: now() });
+      db.sales.push({ id: saleId, customer_name: body.customer_name, customer_phone: body.customer_phone || '', customer_email: body.customer_email || '', address: body.delivery_method === 'retiro' ? '' : (body.address || ''), delivery_method: body.delivery_method || 'envio', shipping_fee: shippingFee, status: 'pendiente', subtotal, total, notes: body.notes || '', pickup_date: body.pickup_date || '', delivery_date: body.delivery_date || '', created_at: now() });
       for (const d of detail) {
         db.sale_items.push({ sale_id: saleId, product_id: d.prod.id, product_name: d.prod.name, size: d.size, quantity: d.qty, unit_price: effPrice(d.prod) });
         db.sizes.find(s => s.product_id === d.prod.id && s.size === d.size).stock -= d.qty;
@@ -234,7 +247,7 @@ const LocalDB = (() => {
     if (method === 'GET' && u.startsWith('/api/orders') && !path.match(/^\/api\/orders\/\d+$/)) {
       const status = q.get('status');
       const search = q.get('q');
-      let list = db.sales.map(saleJSON).sort((a, b) => b.id - a.id);
+      let list = db.sales.map(s => saleJSON(s.id)).sort((a, b) => b.id - a.id);
       if (status && ORDER_STATUSES.includes(status)) list = list.filter(o => o.status === status);
       if (search) {
         const s = search.toLowerCase();
@@ -271,6 +284,9 @@ const LocalDB = (() => {
       if (b.address !== undefined) o.address = b.address;
       if (b.delivery_method !== undefined) o.delivery_method = b.delivery_method;
       if (b.notes !== undefined) o.notes = b.notes;
+      if (b.pickup_date !== undefined) o.pickup_date = b.pickup_date;
+      if (b.delivery_date !== undefined) o.delivery_date = b.delivery_date;
+      if (b.shipping_fee !== undefined) o.shipping_fee = b.shipping_fee;
       save(db);
       return saleJSON(o.id);
     }

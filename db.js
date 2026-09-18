@@ -55,6 +55,8 @@ function init() {
       subtotal REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL DEFAULT 0,
       notes TEXT DEFAULT '',
+      pickup_date TEXT DEFAULT '',
+      delivery_date TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -87,6 +89,9 @@ function init() {
   if (!scols.includes('last_inbound')) db.exec('ALTER TABLE product_sizes ADD COLUMN last_inbound TEXT');
   db.exec("UPDATE product_sizes SET last_inbound = (SELECT created_at FROM products WHERE id = product_id) WHERE last_inbound IS NULL");
   db.exec("UPDATE products SET list_price = price WHERE list_price = 0");
+  const sacols = db.prepare('PRAGMA table_info(sales)').all().map(c => c.name);
+  if (!sacols.includes('pickup_date')) db.exec("ALTER TABLE sales ADD COLUMN pickup_date TEXT DEFAULT ''");
+  if (!sacols.includes('delivery_date')) db.exec("ALTER TABLE sales ADD COLUMN delivery_date TEXT DEFAULT ''");
 }
 
 function seedIfEmpty() {
@@ -94,16 +99,16 @@ function seedIfEmpty() {
   if (count > 0) return;
 
   const products = [
-    { name: 'Camiseta Urban Básica', category: 'Camisetas', price: 19.99, image: 'https://placehold.co/600x800/1f2937/ffffff?text=Camiseta', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
-    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', price: 49.99, image: 'https://placehold.co/600x800/0f172a/ffffff?text=Hoodie', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
-    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', price: 59.99, image: 'https://placehold.co/600x800/1e3a8a/ffffff?text=Jean', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
-    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', price: 79.99, image: 'https://placehold.co/600x800/111827/ffffff?text=Bomber', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
-    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', price: 29.99, image: 'https://placehold.co/600x800/14532d/ffffff?text=Polo', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
-    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', price: 54.99, image: 'https://placehold.co/600x800/3f3f46/ffffff?text=Cargo', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
-    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', price: 69.99, image: 'https://placehold.co/600x800/334155/ffffff?text=Chaleco', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
-    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', price: 45.99, image: 'https://placehold.co/600x800/4c1d95/ffffff?text=Oversize', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
-    { name: 'Camisa Oxford Formal', category: 'Camisetas', price: 39.99, image: 'https://placehold.co/600x800/7f1d1d/ffffff?text=Oxford', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
-    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', price: 34.99, image: 'https://placehold.co/600x800/155e75/ffffff?text=Leggings', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
+    { name: 'Camiseta Urban Básica', category: 'Camisetas', price: 199000, image: 'https://placehold.co/600x800/1f2937/ffffff?text=Camiseta', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
+    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', price: 449000, image: 'https://placehold.co/600x800/0f172a/ffffff?text=Hoodie', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
+    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', price: 549000, image: 'https://placehold.co/600x800/1e3a8a/ffffff?text=Jean', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
+    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', price: 749000, image: 'https://placehold.co/600x800/111827/ffffff?text=Bomber', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
+    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', price: 279000, image: 'https://placehold.co/600x800/14532d/ffffff?text=Polo', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
+    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', price: 499000, image: 'https://placehold.co/600x800/3f3f46/ffffff?text=Cargo', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
+    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', price: 649000, image: 'https://placehold.co/600x800/334155/ffffff?text=Chaleco', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
+    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', price: 419000, image: 'https://placehold.co/600x800/4c1d95/ffffff?text=Oversize', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
+    { name: 'Camisa Oxford Formal', category: 'Camisetas', price: 359000, image: 'https://placehold.co/600x800/7f1d1d/ffffff?text=Oxford', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
+    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', price: 319000, image: 'https://placehold.co/600x800/155e75/ffffff?text=Leggings', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
   ];
 
   const sizes = ['S', 'M', 'L', 'XL'];

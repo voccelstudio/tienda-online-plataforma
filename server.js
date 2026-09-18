@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const SHIPPING_FEE_ENVIO = 5.0;
+const SHIPPING_FEE_ENVIO = 20000;
 const ORDER_STATUSES = ['pendiente', 'confirmado', 'enviado', 'entregado', 'cancelado'];
 const DELIVERY_STATUSES = ['pendiente', 'en_reparto', 'entregado', 'devuelto'];
 const DISCOUNT_OPTIONS = [0, 10, 20, 30, 40];
@@ -147,7 +147,7 @@ app.delete('/api/products/:id', (req, res) => {
 // ---------- CHECKOUT (descuenta stock automaticamente) ----------
 
 app.post('/api/checkout', (req, res) => {
-  const { customer_name, customer_phone = '', customer_email = '', address = '', delivery_method = 'envio', notes = '', items = [] } = req.body || {};
+  const { customer_name, customer_phone = '', customer_email = '', address = '', delivery_method = 'envio', notes = '', pickup_date = '', delivery_date = '', items = [] } = req.body || {};
   if (!customer_name) return res.status(400).json({ error: 'customer_name es obligatorio' });
   if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: 'El carrito está vacío' });
 
@@ -183,10 +183,10 @@ app.post('/api/checkout', (req, res) => {
 
     const total = subtotal + shippingFee;
     const insSale = db.prepare(`
-      INSERT INTO sales (customer_name, customer_phone, customer_email, address, delivery_method, shipping_fee, status, subtotal, total, notes)
-      VALUES (?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)
+      INSERT INTO sales (customer_name, customer_phone, customer_email, address, delivery_method, shipping_fee, status, subtotal, total, notes, pickup_date, delivery_date)
+      VALUES (?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?, ?, ?)
     `);
-    const saleRes = insSale.run(customer_name, customer_phone, customer_email, address, delivery_method, shippingFee, subtotal, total, notes);
+    const saleRes = insSale.run(customer_name, customer_phone, customer_email, address, delivery_method, shippingFee, subtotal, total, notes, pickup_date, delivery_date);
     const saleId = Number(saleRes.lastInsertRowid);
 
     for (const d of detail) {
@@ -275,6 +275,8 @@ app.put('/api/orders/:id', (req, res) => {
   if (b.address !== undefined) db.prepare('UPDATE sales SET address = ? WHERE id = ?').run(b.address, sale.id);
   if (b.delivery_method !== undefined) db.prepare('UPDATE sales SET delivery_method = ? WHERE id = ?').run(b.delivery_method, sale.id);
   if (b.notes !== undefined) db.prepare('UPDATE sales SET notes = ? WHERE id = ?').run(b.notes, sale.id);
+  if (b.pickup_date !== undefined) db.prepare('UPDATE sales SET pickup_date = ? WHERE id = ?').run(b.pickup_date, sale.id);
+  if (b.delivery_date !== undefined) db.prepare('UPDATE sales SET delivery_date = ? WHERE id = ?').run(b.delivery_date, sale.id);
 
   res.json(saleDetail(sale.id));
 });

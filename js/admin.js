@@ -476,8 +476,8 @@ const Admin = {
             ${this.orders.length ? this.orders.map(o => {
               const st = o.status;
               const method = o.delivery_method === 'envio'
-                ? `<i class="fa-solid fa-truck-fast"></i> Envío${o.delivery && o.delivery.status == 'entregado' ? ' ✓' : ''}`
-                : '<i class="fa-solid fa-shop"></i> Retiro';
+                ? `<i class="fa-solid fa-truck-fast"></i> Delivery${o.delivery && o.delivery.status == 'entregado' ? ' ✓' : ''}${o.delivery_date ? '<div class="muted" style="font-size:.76rem">' + esc(o.delivery_date) + '</div>' : ''}`
+                : `<i class="fa-solid fa-shop"></i> Pick up${o.pickup_date ? '<div class="muted" style="font-size:.76rem">' + esc(o.pickup_date) + '</div>' : ''}`;
               return `
                 <tr style="cursor:pointer" data-open-order="${o.id}">
                   <td><strong>#${o.id}</strong></td>
@@ -539,12 +539,14 @@ const Admin = {
             <h3 style="margin-top:16px"><i class="fa-solid fa-truck"></i> Entrega</h3>
             ${o.delivery_method === 'envio' ? `
               <p class="muted"><strong>Dirección:</strong> ${esc(o.address || '—')}</p>
+              ${o.delivery_date ? `<p class="muted"><strong>Fecha de entrega:</strong> ${esc(o.delivery_date)}</p>` : ''}
               ${o.delivery ? `
                 <p class="muted">Mensajería: <strong>${esc(o.delivery.courier || '—')}</strong></p>
                 <p class="muted">Tracking: <strong>${esc(o.delivery.tracking_number || '—')}</strong></p>
                 <p class="muted">Estado delivery: <span class="status ${o.delivery.status}">${o.delivery.status.replace('_', ' ')}</span></p>
               ` : ''}
-            ` : '<p class="muted">Retiro en tienda.</p>'}
+            ` : `<p class="muted">Pick up · Retiro en tienda.</p>
+              ${o.pickup_date ? `<p class="muted"><strong>Fecha y hora de visita:</strong> ${esc(o.pickup_date)}</p>` : ''}`}
             ${o.notes ? `<p class="muted"><i class="fa-solid fa-note-sticky"></i> ${esc(o.notes)}</p>` : ''}
             <p class="muted" style="font-size:.8rem;margin-top:10px">Registrado: ${esc(o.created_at)}</p>
           </div>
@@ -566,6 +568,10 @@ const Admin = {
             <select id="orderStatusSel">
               ${statuses.map(s => `<option value="${s}" ${o.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('')}
             </select>
+          </div>
+          <div class="field" style="min-width:220px">
+            <label>${o.delivery_method === 'retiro' ? 'Fecha de visita a la tienda' : 'Fecha de entrega'}</label>
+            <input id="orderDate" type="${o.delivery_method === 'retiro' ? 'datetime-local' : 'date'}" value="${esc(o.delivery_method === 'retiro' ? (o.pickup_date || '') : (o.delivery_date || ''))}">
           </div>
           <button class="btn btn-accent" id="saveOrderStatus"><i class="fa-solid fa-floppy-disk"></i> Guardar estado</button>
         </div>
@@ -595,10 +601,14 @@ const Admin = {
 
     box.querySelector('#saveOrderStatus').addEventListener('click', async () => {
       const st = box.querySelector('#orderStatusSel').value;
-      if (st === o.status) return;
+      const dateVal = box.querySelector('#orderDate').value;
+      if (st === o.status && dateVal === (o.delivery_method === 'retiro' ? (o.pickup_date || '') : (o.delivery_date || ''))) return;
       if (st === 'cancelado' && !confirm('Al cancelar se devolverá el stock a inventario. ¿Continuar?')) return;
       try {
-        await API.put('/api/orders/' + o.id, { status: st });
+        const patch = { status: st };
+        if (o.delivery_method === 'retiro') { if (dateVal !== (o.pickup_date || '')) patch.pickup_date = dateVal; }
+        else { if (dateVal !== (o.delivery_date || '')) patch.delivery_date = dateVal; }
+        await API.put('/api/orders/' + o.id, patch);
         toast('Estado actualizado a ' + st);
         await this.loadOrders();
         await this.loadStats();

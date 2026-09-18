@@ -274,7 +274,7 @@ const Store = {
     }
 
     const subtotal = this.cart.reduce((a, c) => a + c.price * c.quantity, 0);
-    const shipping = 5.0;
+    const shipping = 20000;
 
     body.innerHTML = `
       ${this.cart.map((c, i) => `
@@ -307,11 +307,13 @@ const Store = {
         <div class="field">
           <label>Método de entrega</label>
           <div class="methods" id="delMethods">
-            <button type="button" class="method active" data-method="envio"><i class="fa-solid fa-truck-fast"></i> Envío a domicilio <small>+ ${money(shipping)}</small></button>
-            <button type="button" class="method" data-method="retiro"><i class="fa-solid fa-shop"></i> Retiro en tienda <small>Sin costo</small></button>
+            <button type="button" class="method active" data-method="envio"><i class="fa-solid fa-truck-fast"></i> Delivery · Envío a domicilio <small>+ ${money(shipping)}</small></button>
+            <button type="button" class="method" data-method="retiro"><i class="fa-solid fa-shop"></i> Pick up · Retiro en tienda <small>Sin costo</small></button>
           </div>
         </div>
         <div class="field" id="addrField"><label>Dirección de entrega</label><input name="address" placeholder="Calle, número, colonia, ciudad"></div>
+        <div class="field" id="delivDateField"><label>Fecha de entrega (opcional)</label><input type="date" name="delivery_date"></div>
+        <div class="field" id="pickupField" hidden><label>Fecha y hora de tu visita a la tienda (opcional)</label><input type="datetime-local" name="pickup_date"></div>
         <div class="field"><label>Notas (opcional)</label><textarea name="notes" placeholder="Instrucciones de entrega, referencias..."></textarea></div>
         <button class="btn btn-accent btn-block" type="submit" style="font-size:1rem"><i class="fa-solid fa-lock"></i> Confirmar pedido — ${money(subtotal + shipping)}</button>
       </form>
@@ -342,8 +344,10 @@ const Store = {
         body.querySelectorAll('.method').forEach(x => x.classList.remove('active'));
         m.classList.add('active');
         const addr = body.querySelector('#addrField');
-        if (m.dataset.method === 'retiro') addr.hidden = true;
-        else addr.hidden = false;
+        const pDate = body.querySelector('#pickupField');
+        const dDate = body.querySelector('#delivDateField');
+        if (m.dataset.method === 'retiro') { addr.hidden = true; pDate.hidden = false; dDate.hidden = true; }
+        else { addr.hidden = false; pDate.hidden = true; dDate.hidden = false; }
         const submit = body.querySelector('#checkoutForm .btn-block');
         const fee = m.dataset.method === 'retiro' ? 0 : shipping;
         submit.innerHTML = `<i class="fa-solid fa-lock"></i> Confirmar pedido — ${money(subtotal + fee)}`;
@@ -361,6 +365,8 @@ const Store = {
         address: method === 'retiro' ? '' : f.address.value,
         delivery_method: method,
         notes: f.notes.value,
+        pickup_date: method === 'retiro' ? f.pickup_date.value : '',
+        delivery_date: method === 'envio' ? f.delivery_date.value : '',
         items: this.cart.map(c => ({ product_id: c.product_id, size: c.size, quantity: c.quantity }))
       };
       const btn = f.querySelector('.btn-block');
@@ -377,7 +383,10 @@ const Store = {
             <h3>¡Pedido confirmado!</h3>
             <div class="muted">Guardamos tu número de pedido:</div>
             <div class="oid">#${res.sale_id}</div>
-            <div class="muted" style="margin:10px 0 18px">Total: <strong>${money(res.total)}</strong><br>El inventario ya fue actualizado.</div>
+            <div class="muted" style="margin:10px 0 18px">Total: <strong>${money(res.total)}</strong><br>El inventario ya fue actualizado.
+            ${method === 'retiro' && f.pickup_date.value ? `<br>Te esperamos <strong>${esc(f.pickup_date.value)}</strong> en la tienda.` : ''}
+            ${method === 'envio' && f.delivery_date.value ? `<br>Entrega estimada para el <strong>${esc(f.delivery_date.value)}</strong>.` : ''}
+            </div>
             <button type="button" class="btn btn-primary" data-close-cart><i class="fa-solid fa-store"></i> Seguir comprando</button>
           </div>
         `;
