@@ -702,6 +702,7 @@ const Admin = {
             <option value="category" ${this.reportGroup === 'category' ? 'selected' : ''}>Por categoría</option>
             <option value="product" ${this.reportGroup === 'product' ? 'selected' : ''}>Top productos</option>
           </select>
+          <button class="btn btn-outline" id="rPdf"><i class="fa-solid fa-file-pdf"></i> Exportar PDF</button>
           <button class="btn btn-outline" id="rExport"><i class="fa-solid fa-file-csv"></i> Exportar CSV</button>
         </div>
       </div>
@@ -715,6 +716,7 @@ const Admin = {
       document.getElementById('rTo').addEventListener('change', e => { this.reportTo = e.target.value; this.evalReport(); });
       document.getElementById('rGroup').addEventListener('change', e => { this.reportGroup = e.target.value; this.evalReport(); });
       document.getElementById('rExport').addEventListener('click', () => this.exportCSV());
+      document.getElementById('rPdf').addEventListener('click', () => this.exportPDF());
     };
     if (document.getElementById('rFrom')) bind();
   },
@@ -891,6 +893,133 @@ const Admin = {
       a.click();
       URL.revokeObjectURL(a.href);
       toast('Reporte exportado');
+    }).catch(e => toast(e.message, 'err'));
+  },
+
+  exportPDF() {
+    const url = `/api/reports/sales?group=${this.reportGroup}&from=${this.reportFrom}&to=${this.reportTo}`;
+    API.get(url).then(rows => {
+      const J = window.jspdf && window.jspdf.jsPDF;
+      if (!J) { toast('Biblioteca PDF no disponible. Revisá tu conexión.', 'err'); return; }
+      const land = this.reportGroup === 'day';
+      const doc = new J({ orientation: land ? 'portrait' : 'landscape', unit: 'pt', format: 'a4' });
+      const W = doc.internal.pageSize.getWidth();
+      const X = 40, RW = W - 80;
+      const groupNames = { day: 'Por día', month: 'Comparativa mensual', category: 'Por categoría', product: 'Top productos' };
+
+      let y = 46;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.setTextColor(23, 24, 28);
+      doc.text('VOCCEL — Reporte de ventas', X, y); y += 18;
+      doc.setFontSize(10.5); doc.setTextColor(107, 111, 118); doc.setFont('helvetica', 'normal');
+      doc.text(`Período: ${this.reportFrom} → ${this.reportTo}   ·   Agrupado: ${groupNames[this.reportGroup] || this.reportGroup}`, X, y); y += 14;
+      doc.text(`Generado: ${new Date().toLocaleString('es-PY')}`, X, y); y += 22;
+
+      if (!rows.length) {
+        doc.setFontSize(12); doc.setTextColor(150, 60, 60);
+        doc.text('Sin ventas en el rango seleccionado.', X, y);
+        doc.save(`reporte-ventas-${this.reportFrom}-${this.reportTo}.pdf`);
+        toast('PDF exportado');
+        return;
+      }
+
+      const totalRev = rows.reduce((a, r) => a + r.revenue, 0);
+      const totalOrd = rows.reduce((a, r) => a + r.orders, 0);
+      const totalUnits = rows.reduce((a, r) => a + (r.units || 0), 0);
+
+      doc.setFillColor(23, 24, 28);
+      doc.roundedRect(X, y, (RW - 20) / 3, 56, 6, 6, 'F');
+      doc.roundedRect(X + (RW - 20) / 3 + 10, y, (RW - 20) / 3, 56, 6, 6, 'F');
+      doc.roundedRect(X + 2 * ((RW - 20) / 3 + 10), y, (RW - 20) / 3, 56, 6, 6, 'F');
+      doc.setFillColor(255, 255, 255);
+      doc.setTextColor(255, 255, 255); doc.setFontSize(8); doc.setFont('helvetica', 'bold');
+      doc.text('INGRESOS TOTALES', X + 14, y + 18);
+      doc.text('PEDIDOS', X + 24 + (RW - 20) / 3, y + 18);
+      doc.text(this.reportGroup === 'month' ? 'UNIDADES TOTALES' : 'TICKET PROMEDIO', X + 8 + 2 * ((RW - 20) / 3 + 10), y + 18);
+      doc.text(money(totalRev), X + 14, y + 42);
+      doc.text(String(totalOrd), X + 24 + (RW - 20) / 3, y + 42);
+      doc.text(money(this.reportGroup === 'month' ? totalUnits : (totalOrd ? totalRev / totalOrd : 0)), X + 8 + 2 * ((RW - 20) / 3 + 10), y + 42);
+      y += 82;
+
+      const needChart = this.reportGroup === 'day' || this.reportGroup === 'month';
+      const chartTop = y;
+      if (needChart) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(23, 24, 28);
+        doc.text(this.reportGroup === 'month' ? 'Comparativa de ingresos por mes' : 'Ventas por día (ingresos)', X, y + 6);
+        y += 24;
+        const max = Math.max(1, ...rows.map(r => r.revenue));
+        const barH = 190, base = y + barH;
+        const n = rows.length;
+        const colW = RW / Math.min(n, 12);
+        const gap = Math.min(16, colW * 0.25);
+        doc.setDrawColor(214, 211, 204); doc.line(X, base, X + RW, base);
+        rows.slice(0, 12).forEach((r, i) => {
+          const h = Math.max(4, Math.round(r.revenue / max * barH));
+          doc.setFillColor(245, 158, 11);
+          doc.rect(X + i * colW + gap, base - h, colW - gap * 2, h, 'F');
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(23, 24, 28);
+          const lab = r.label.length > 9 ? r.label.slice(0, 9) : r.label;
+          doc.text(lab, X + i * colW + colW / 2, base + 14, { align: 'center' });
+          doc.setTextColor(107, 111, 118);
+          doc.text(String(r.orders) + ' ped', X + i * colW + colW / 2, base + 26, { align: 'center' });
+        });
+        y = base + 40;
+        if (n > 12) doc.setFontSize(8.5); doc.setTextColor(107, 111, 118);
+        if (n > 12) doc.text('Mostrando los 12 períodos con más ingresos de ' + n + '.', X, y + 4), y += 16;
+      }
+
+      const headers = this.reportGroup === 'day'
+        ? ['Fecha', 'Pedidos', 'Unidades', 'Ingresos']
+        : this.reportGroup === 'month'
+          ? ['Mes', 'Pedidos', 'Unidades', 'Ingresos', '% vs anterior']
+          : ['Producto / Categoría', 'Unidades', 'Ingresos', 'Participación'];
+      const body = this.reportGroup === 'day'
+        ? rows.map(r => [r.label, String(r.orders), String(r.units || 0), money(r.revenue)])
+        : this.reportGroup === 'month'
+          ? rows.map((r, i) => {
+              const prev = i > 0 ? rows[i - 1].revenue : null;
+              const delta = prev && prev > 0 ? Math.round((r.revenue - prev) / prev * 100) : null;
+              return [r.label, String(r.orders), String(r.units || 0), money(r.revenue), delta === null ? '—' : (delta >= 0 ? '+' + delta + '%' : delta + '%')];
+            })
+          : rows.map(r => [r.label, String(r.units || 0), money(r.revenue), (totalRev ? Math.round(r.revenue / totalRev * 100) : 0) + '%']);
+
+      doc.setFontSize(11); doc.setTextColor(23, 24, 28); doc.setFont('helvetica', 'bold');
+      doc.text('Detalle', X, y + 4); y += 20;
+
+      const colW = this.reportGroup === 'day' ? [100, 70, 70, 110]
+        : this.reportGroup === 'month' ? [110, 80, 80, 130, 110]
+          : [RW - 120, 70, 120, 90];
+      const footerY = 812;
+      const addPage = () => {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(160, 160, 160);
+        doc.text('VOCCEL · página ' + doc.internal.getNumberOfPages(), W - 40, footerY + 12, { align: 'right' });
+        doc.addPage();
+        y = 60;
+      };
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      doc.setFillColor(23, 24, 28); doc.setTextColor(255, 255, 255);
+      doc.rect(X, y, RW, 20, 'F');
+      doc.text(headers[0], X + 6, y + 13);
+      let x = X + 6;
+      for (let i = 1; i < headers.length; i++) { x += colW[i - 1]; doc.text(headers[i], x, y + 13); }
+      y += 26;
+
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      body.forEach((row, ri) => {
+        if (y > footerY - 30) addPage();
+        doc.setFillColor(ri % 2 ? 250 : 255, ri % 2 ? 249 : 255, ri % 2 ? 246 : 255);
+        doc.rect(X, y - 14, RW, 20, 'F');
+        doc.setTextColor(23, 24, 28);
+        doc.text(String(row[0]).slice(0, 60), X + 6, y);
+        let colX = X + 6;
+        for (let i = 1; i < row.length; i++) { colX += colW[i - 1]; doc.text(String(row[i]), colX, y, { align: 'left' }); }
+        y += 20;
+      });
+
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(23, 24, 28);
+      doc.text('Total: ' + money(totalRev), X, y + 8);
+      doc.save(`reporte-ventas-${this.reportFrom}-${this.reportTo}.pdf`);
+      toast('PDF exportado');
     }).catch(e => toast(e.message, 'err'));
   }
 };
