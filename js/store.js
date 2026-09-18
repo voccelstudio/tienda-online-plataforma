@@ -555,7 +555,17 @@ const Store = {
       btn.addEventListener('click', () => {
         const i = Number(btn.dataset.idx);
         const delta = Number(btn.dataset.ciq);
-        const size = this.products.find(p => p.id === this.cart[i].product_id).sizes.find(s => s.size === this.cart[i].size);
+        const prod = this.products.find(p => p.id === this.cart[i].product_id);
+        const size = prod ? prod.sizes.find(s => s.size === this.cart[i].size) : null;
+        if (!prod || !size) {
+          this.cart.splice(i, 1);
+          this.persistCart();
+          this._coupon = null;
+          this.renderCart();
+          this.updateCartUI();
+          toast('Producto ya no disponible: se quitó del carrito', 'warn');
+          return;
+        }
         const newQty = this.cart[i].quantity + delta;
         if (newQty < 1) { this.cart.splice(i, 1); }
         else if (newQty > size.stock) { toast('Stock máximo disponible alcanzado', 'warn'); }

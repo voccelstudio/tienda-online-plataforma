@@ -186,7 +186,13 @@ if (!db.prepare('SELECT 1 FROM settings WHERE k = ?').get('app')) {
     qr_info: '',
     pickup_points: [{ name: 'Tienda VOCCEL', address: '', hours: '' }],
     pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
-    pending_expire_days: 0
+    pending_expire_days: 0,
+    hero_slides: [
+      { image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=1600&auto=format&fit=crop', tag: 'Nueva temporada', title: 'Camisetas urbanas', subtitle: 'Corte actual, algodón premium y stock en tiempo real.', link: '' },
+      { image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=1600&auto=format&fit=crop', tag: 'Para el frío', title: 'Hoodies VOCCEL Classic', subtitle: 'Felpa francesa cepillada, de S a XL.', link: '' },
+      { image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=1600&auto=format&fit=crop', tag: 'Look de ciudad', title: 'Chaquetas bomber', subtitle: 'Acolchadas, con cierres y actitud.', link: '' },
+      { image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?q=80&w=1600&auto=format&fit=crop', tag: 'Esenciales', title: 'Jeans slim fit', subtitle: 'Mezclilla elástica que se adapta a tu día.', link: '' }
+    ]
   }));
 }
 if (!db.prepare('SELECT 1 FROM coupons LIMIT 1').get()) {

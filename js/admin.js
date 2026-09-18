@@ -20,6 +20,9 @@ const Admin = {
       this.loadSettings(),
       this.loadCoupons()
     ]);
+    if (localStorage.getItem('voccela.adminLastSeen') === null && this.orders.length) {
+      localStorage.setItem('voccela.adminLastSeen', String(Math.max(...this.orders.map(o => o.id))));
+    }
   },
 
   async loadStats() { this.stats = await API.get('/api/stats'); },
@@ -65,7 +68,7 @@ const Admin = {
       </div>
     `;
 
-    if (this.tab === 'pedidos') this.checkNewOrders();
+    this.updateBadge();
 
     app.querySelectorAll('[data-atab]').forEach(b => b.addEventListener('click', () => {
       this.tab = b.dataset.atab;
@@ -81,27 +84,29 @@ const Admin = {
     if (this.tab === 'ajustes') this.ajustesBind();
   },
 
-  checkNewOrders() {
-    if (!this.orders.length) return;
+  updateBadge() {
+    if (!this.orders || !this.orders.length) return;
     const last = Math.max(...this.orders.map(o => o.id));
     const prev = Number(localStorage.getItem('voccela.adminLastSeen') || 0);
-    if (last > prev) {
-      const badge = document.querySelector(`[data-atab="pedidos"] .tab-badge`);
-      if (badge) badge.textContent = last - prev;
-      if (this._notified !== last && prev > 0) {
-        this._notified = last;
-        try {
-          const ctx = new AudioContext();
-          const o = ctx.createOscillator();
-          const g = ctx.createGain();
-          o.connect(g); g.connect(ctx.destination);
-          o.frequency.value = 880; o.type = 'sine';
-          g.gain.setValueAtTime(0.08, ctx.currentTime);
-          o.start();
-          o.stop(ctx.currentTime + 0.18);
-          setTimeout(() => { o.frequency.value = 660; o.stop(ctx.currentTime + 0.28); }, 180);
-        } catch (e) {}
-      }
+    const unread = Math.max(0, last - prev);
+    const badge = document.querySelector('[data-atab="pedidos"] .tab-badge');
+    if (badge) {
+      badge.textContent = unread;
+      badge.classList.toggle('hidden', !unread);
+    }
+    if (prev > 0 && last > prev && this._notified !== last) {
+      this._notified = last;
+      try {
+        const ctx = new AudioContext();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = 880; o.type = 'sine';
+        g.gain.setValueAtTime(0.08, ctx.currentTime);
+        o.start();
+        o.stop(ctx.currentTime + 0.18);
+        setTimeout(() => { o.frequency.value = 660; o.stop(ctx.currentTime + 0.28); }, 180);
+      } catch (e) {}
     }
   },
 
@@ -110,7 +115,7 @@ const Admin = {
     const s = this.stats || {};
     const recent = this.orders.slice(0, 6);
     const low = this.inventory.filter(p => totalStock(p.sizes) <= 4 || lowestStock(p.sizes) <= 2).slice(0, 6);
-    const statusIcon = { pendiente: 'fa-hourglass-half', confirmado: 'fa-check', enviado: 'fa-truck-fast', entregado: 'fa-box-open', cancelado: 'fa-ban' };
+    const statusIcon = { pendiente: 'fa-hourglass-half', confirmado: 'fa-check', enviado: 'fa-truck-fast', entregado: 'fa-box-open', cancelado: 'fa-ban', expirado: 'fa-clock' };
     return `
       <div class="panel-head"><h2><i class="fa-solid fa-gauge-high"></i> Panel de control</h2>
         <span class="muted">Vista general de la tienda</span>
@@ -621,7 +626,7 @@ const Admin = {
           </div>
           <div class="field" style="min-width:220px">
             <label>${o.delivery_method === 'retiro' ? 'Fecha de visita a la tienda' : 'Fecha de entrega'}</label>
-            <input id="orderDate" type="${o.delivery_method === 'retiro' ? 'datetime-local' : 'date'}" value="${esc(o.delivery_method === 'retiro' ? (o.pickup_date || '') : (o.delivery_date || ''))}">
+            <input id="orderDate" type="${o.delivery_method === 'retiro' ? 'text' : 'date'}" value="${esc(o.delivery_method === 'retiro' ? (o.pickup_date || '') : (o.delivery_date || ''))}" placeholder="${o.delivery_method === 'retiro' ? '2026-09-20 14:00 - 17:00' : ''}">
           </div>
           <button class="btn btn-accent" id="saveOrderStatus"><i class="fa-solid fa-floppy-disk"></i> Guardar estado</button>
         </div>
