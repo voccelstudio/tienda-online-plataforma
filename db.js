@@ -88,7 +88,21 @@ function init() {
   const scols = db.prepare('PRAGMA table_info(product_sizes)').all().map(c => c.name);
   if (!scols.includes('last_inbound')) db.exec('ALTER TABLE product_sizes ADD COLUMN last_inbound TEXT');
   db.exec("UPDATE product_sizes SET last_inbound = (SELECT created_at FROM products WHERE id = product_id) WHERE last_inbound IS NULL");
-  db.exec("UPDATE products SET list_price = price WHERE list_price = 0");
+  const images = {
+  'Camiseta Urban Básica': 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop',
+  'Hoodie VOCCEL Classic': 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=800&auto=format&fit=crop',
+  'Jean Slim Fit Destroyed': 'https://images.unsplash.com/photo-1542272604-787c3835535d?q=80&w=800&auto=format&fit=crop',
+  'Chamarra Bomber Negra': 'https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=800&auto=format&fit=crop',
+  'Polo Deportiva Corte Clásico': 'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=800&auto=format&fit=crop',
+  'Pantalón Cargo Táctico': 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?q=80&w=800&auto=format&fit=crop',
+  'Chaleco Acolchado Ligero': 'https://images.unsplash.com/photo-1548624313-0396c75e4b1a?q=80&w=800&auto=format&fit=crop',
+  'Sudadera Oversize Canguro': 'https://images.unsplash.com/photo-1509942774463-acf339cf87d5?q=80&w=800&auto=format&fit=crop',
+  'Camisa Oxford Formal': 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=800&auto=format&fit=crop',
+  'Leggings Deportivos Alta Compresión': 'https://images.unsplash.com/photo-1506629082955-511b1aa562c8?q=80&w=800&auto=format&fit=crop'
+};
+const updImg = db.prepare('UPDATE products SET image = ? WHERE name = ? AND image LIKE ?');
+for (const [n, u] of Object.entries(images)) updImg.run(u, n, '%placehold%');
+db.exec("UPDATE products SET list_price = price WHERE list_price = 0");
   const sacols = db.prepare('PRAGMA table_info(sales)').all().map(c => c.name);
   if (!sacols.includes('pickup_date')) db.exec("ALTER TABLE sales ADD COLUMN pickup_date TEXT DEFAULT ''");
   if (!sacols.includes('delivery_date')) db.exec("ALTER TABLE sales ADD COLUMN delivery_date TEXT DEFAULT ''");
@@ -99,16 +113,16 @@ function seedIfEmpty() {
   if (count > 0) return;
 
   const products = [
-    { name: 'Camiseta Urban Básica', category: 'Camisetas', price: 199000, image: 'https://placehold.co/600x800/1f2937/ffffff?text=Camiseta', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
-    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', price: 449000, image: 'https://placehold.co/600x800/0f172a/ffffff?text=Hoodie', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
-    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', price: 549000, image: 'https://placehold.co/600x800/1e3a8a/ffffff?text=Jean', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
-    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', price: 749000, image: 'https://placehold.co/600x800/111827/ffffff?text=Bomber', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
-    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', price: 279000, image: 'https://placehold.co/600x800/14532d/ffffff?text=Polo', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
-    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', price: 499000, image: 'https://placehold.co/600x800/3f3f46/ffffff?text=Cargo', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
-    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', price: 649000, image: 'https://placehold.co/600x800/334155/ffffff?text=Chaleco', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
-    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', price: 419000, image: 'https://placehold.co/600x800/4c1d95/ffffff?text=Oversize', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
-    { name: 'Camisa Oxford Formal', category: 'Camisetas', price: 359000, image: 'https://placehold.co/600x800/7f1d1d/ffffff?text=Oxford', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
-    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', price: 319000, image: 'https://placehold.co/600x800/155e75/ffffff?text=Leggings', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
+    { name: 'Camiseta Urban Básica', category: 'Camisetas', price: 199000, image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=800&auto=format&fit=crop', description: 'Camiseta de algodón 100% peinado, corte slim. Básica de todos los días.' },
+    { name: 'Hoodie VOCCEL Classic', category: 'Sudaderas', price: 449000, image: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=800&auto=format&fit=crop', description: 'Sudadera con capucha de felpa francesa, interior cepillado y capucha de doble capa.' },
+    { name: 'Jean Slim Fit Destroyed', category: 'Pantalones', price: 549000, image: 'https://images.unsplash.com/photo-1542272604-787c3835535d?q=80&w=800&auto=format&fit=crop', description: 'Jean slim fit con desgastes, mezclilla elástica cómoda para todo el día.' },
+    { name: 'Chamarra Bomber Negra', category: 'Chaquetas', price: 749000, image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?q=80&w=800&auto=format&fit=crop', description: 'Chamarra bomber con forro acolchado, bolsillos con cremallera y puños de punto.' },
+    { name: 'Polo Deportiva Corte Clásico', category: 'Camisetas', price: 279000, image: 'https://images.unsplash.com/photo-1598033129183-c4f50c736f10?q=80&w=800&auto=format&fit=crop', description: 'Polo de piqué transpirable, cuello estructurado y botonadura de 3 botones.' },
+    { name: 'Pantalón Cargo Táctico', category: 'Pantalones', price: 499000, image: 'https://images.unsplash.com/photo-1473966968600-fa801b869a1a?q=80&w=800&auto=format&fit=crop', description: 'Cargo de 6 bolsillos, tela de ripstop resistente y cintura ajustable.' },
+    { name: 'Chaleco Acolchado Ligero', category: 'Chaquetas', price: 649000, image: 'https://images.unsplash.com/photo-1548624313-0396c75e4b1a?q=80&w=800&auto=format&fit=crop', description: 'Chaleco sin mangas ultraligero, ideal para capas en días frescos.' },
+    { name: 'Sudadera Oversize Canguro', category: 'Sudaderas', price: 419000, image: 'https://images.unsplash.com/photo-1509942774463-acf339cf87d5?q=80&w=800&auto=format&fit=crop', description: 'Sudadera oversize con bolsillo canguro y algodón hilado grueso. Fit holgado.' },
+    { name: 'Camisa Oxford Formal', category: 'Camisetas', price: 359000, image: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?q=80&w=800&auto=format&fit=crop', description: 'Camisa oxford de botonadura completa, tela de algodón oxford clásica.' },
+    { name: 'Leggings Deportivos Alta Compresión', category: 'Deportivo', price: 319000, image: 'https://images.unsplash.com/photo-1506629082955-511b1aa562c8?q=80&w=800&auto=format&fit=crop', description: 'Leggings de alta compresión con cintura alta y tela de secado rápido.' }
   ];
 
   const sizes = ['S', 'M', 'L', 'XL'];
