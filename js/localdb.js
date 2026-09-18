@@ -34,11 +34,12 @@ const IMAGE_BY_NAME = {
     qr_info: 'Te enviamos el QR y alias de pago al confirmar el pedido.',
     pickup_points: [{ name: 'Tienda VOCCEL', address: 'Av. Principal 123, Asunción', hours: 'Lun-Sáb 9:00 - 19:00' }],
     pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
-    pending_expire_days: 0
+    pending_expire_days: 0,
+    hero_slides: []
   };
   function settingsJSON() {
     const s = Object.assign({}, DEFAULT_SETTINGS, db.settings || {});
-    return { store_name: s.store_name, whatsapp: s.whatsapp, delivery_fee: s.delivery_fee, free_delivery_over: s.free_delivery_over, iva: s.iva, iva_calc: s.iva_calc, payment_methods: s.payment_methods, transfer_info: s.transfer_info, qr_info: s.qr_info, pickup_points: s.pickup_points || [], pickup_slots: s.pickup_slots || [], pending_expire_days: s.pending_expire_days };
+    return { store_name: s.store_name, whatsapp: s.whatsapp, delivery_fee: s.delivery_fee, free_delivery_over: s.free_delivery_over, iva: s.iva, iva_calc: s.iva_calc, payment_methods: s.payment_methods, transfer_info: s.transfer_info, qr_info: s.qr_info, pickup_points: s.pickup_points || [], pickup_slots: s.pickup_slots || [], pending_expire_days: s.pending_expire_days, hero_slides: s.hero_slides || [] };
   }
   function fmtGs(n) { return 'Gs. ' + Math.round(n || 0).toLocaleString('es-PY'); }
   function validateCoupon(code, subtotal) {

@@ -774,6 +774,16 @@ const Admin = {
           <div class="field"><label>Datos de transferencia</label><textarea id="sTransInfo" placeholder="Banco, alias, titular, CBU...">${esc(s.transfer_info || '')}</textarea></div>
           <div class="field"><label>Datos de QR / alias</label><textarea id="sQrInfo" placeholder="Alias, link de pago, número para QR...">${esc(s.qr_info || '')}</textarea></div>
         </div>
+        <div class="panel-card" style="grid-column:1 / -1">
+          <h3><i class="fa-solid fa-image"></i> Portada (hero) — carrusel de fotos</h3>
+          <p class="muted" style="font-size:.8rem;margin-bottom:10px">Fotos de fondo que tus clientes verán arriba de todo. Si dejas la lista vacía se muestra la portada por defecto.</p>
+          <div id="sHeroSlides"></div>
+          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap">
+            <select id="heroProdImg" class="select" style="max-width:260px"><option value="">— Usar imagen de un producto —</option>${this.products.map(p => `<option value="${esc(p.image)}">${esc(p.name)}</option>`).join('')}${this.inventory.map(p => p.image && p.name ? `<option value="${esc(p.image)}">${esc(p.name)} (inv)</option>` : '').join('')}</select>
+            <button class="btn btn-sm btn-outline" id="sAddSlide" type="button"><i class="fa-solid fa-plus"></i> Agregar slide</button>
+          </div>
+          <div class="mini-note"><i class="fa-solid fa-circle-info"></i> Para subir tu propia foto subila antes a un hosting de imágenes (ej. Cloudinary, Imgur) y pegá la URL.</div>
+        </div>
         <div class="panel-card">
           <h3><i class="fa-solid fa-shop"></i> Puntos de retiro</h3>
           <div id="sPoints"></div>
@@ -839,8 +849,42 @@ const Admin = {
       wrap.querySelectorAll('[data-del-slot]').forEach(b => b.addEventListener('click', () => { slots.splice(Number(b.dataset.delSlot), 1); renderSlots(); }));
     };
     renderPoints(); renderSlots();
-    document.getElementById('sAddPoint').addEventListener('click', () => { points.push({ name: '', address: '', hours: '' }); renderPoints(); });
+document.getElementById('sAddPoint').addEventListener('click', () => { points.push({ name: '', address: '', hours: '' }); renderPoints(); });
     document.getElementById('sAddSlot').addEventListener('click', () => { slots.push(''); renderSlots(); });
+
+    const hero = (s.hero_slides && s.hero_slides.length ? JSON.parse(JSON.stringify(s.hero_slides)) : []);
+    const prodOptions = () => `<option value="">— de producto —</option>${this.products.map(p => `<option value="${esc(p.image)}" data-name="${esc(p.name)}">${esc(p.name)}</option>`).join('')}`;
+    const renderHero = () => {
+      const wrap = document.getElementById('sHeroSlides');
+      if (!wrap) return;
+      wrap.innerHTML = hero.map((h, i) => `
+        <div class="hero-edit-row" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
+          <div class="phone-row" style="flex-wrap:wrap;gap:8px">
+            ${h.image ? `<span class="img-preview" style="width:52px;height:64px"><img src="${esc(h.image)}" alt=""></span>` : '<span class="img-preview" style="width:52px;height:64px"><i class="fa-solid fa-image"></i></span>'}
+            <input data-h="image" data-i="${i}" value="${esc(h.image)}" placeholder="URL de la foto (fondo)" style="flex:1;min-width:220px">
+            <select class="hero-prod" data-i="${i}" style="max-width:180px">${prodOptions()}</select>
+          </div>
+          <div class="phone-row" style="flex-wrap:wrap;margin-top:8px">
+            <input data-h="tag" data-i="${i}" value="${esc(h.tag)}" placeholder="Etiqueta (opcional)" style="flex:1;min-width:140px">
+            <input data-h="title" data-i="${i}" value="${esc(h.title)}" placeholder="Título grande" style="flex:2;min-width:180px">
+          </div>
+          <div class="phone-row" style="flex-wrap:wrap;margin-top:8px">
+            <input data-h="subtitle" data-i="${i}" value="${esc(h.subtitle)}" placeholder="Subtítulo / texto" style="flex:2;min-width:200px">
+            <input data-h="link" data-i="${i}" value="${esc(h.link)}" placeholder="Link del botón (opcional)" style="flex:1;min-width:160px">
+            <button class="icon-btn" data-hup="${i}" title="Subir"><i class="fa-solid fa-arrow-up"></i></button>
+            <button class="icon-btn" data-hdown="${i}" title="Bajar"><i class="fa-solid fa-arrow-down"></i></button>
+            <button class="icon-btn" style="color:var(--danger)" data-hdel="${i}" title="Eliminar"><i class="fa-solid fa-trash-can"></i></button>
+          </div>
+        </div>`).join('') || '<div class="muted" style="padding:8px 0">Sin slides configurados. Agregá el primero con el botón.</div>';
+      wrap.querySelectorAll('[data-h]').forEach(inp => inp.addEventListener('input', e => { hero[e.target.dataset.i][e.target.dataset.h] = e.target.value; }));
+      wrap.querySelectorAll('.hero-prod').forEach(sel => sel.addEventListener('change', e => { const opt = sel.options[sel.selectedIndex]; if (opt && opt.value) hero[sel.dataset.i].image = opt.value; renderHero(); }));
+      wrap.querySelectorAll('[data-hup]').forEach(b => b.addEventListener('click', e => { const i = Number(b.dataset.hup); if (i > 0) { [hero[i], hero[i - 1]] = [hero[i - 1], hero[i]]; renderHero(); } }));
+      wrap.querySelectorAll('[data-hdown]').forEach(b => b.addEventListener('click', e => { const i = Number(b.dataset.hdown); if (i < hero.length - 1) { [hero[i], hero[i + 1]] = [hero[i + 1], hero[i]]; renderHero(); } }));
+      wrap.querySelectorAll('[data-hdel]').forEach(b => b.addEventListener('click', e => { hero.splice(Number(b.dataset.hdel), 1); renderHero(); }));
+    };
+    renderHero();
+    const sAddSlide = document.getElementById('sAddSlide');
+    if (sAddSlide) sAddSlide.addEventListener('click', () => { hero.push({ image: '', tag: '', title: '', subtitle: '', link: '' }); renderHero(); });
 
     document.getElementById('sAddCoupon').addEventListener('click', async () => {
       const r = await API.post('/api/coupons', { code: 'VOCCEL' + (Date.now() % 1000), type: 'percent', value: 10 });
@@ -878,7 +922,8 @@ const Admin = {
         transfer_info: document.getElementById('sTransInfo').value,
         qr_info: document.getElementById('sQrInfo').value,
         pickup_points: points.map(p => ({ name: p.name || 'Punto', address: p.address || '', hours: p.hours || '' })),
-        pickup_slots: slots.map(v => v.trim()).filter(Boolean)
+        pickup_slots: slots.map(v => v.trim()).filter(Boolean),
+        hero_slides: hero.map(h => ({ image: h.image || '', tag: h.tag || '', title: h.title || '', subtitle: h.subtitle || '', link: h.link || '' })).filter(h => h.image)
       };
       try {
         await API.put('/api/settings', buf);

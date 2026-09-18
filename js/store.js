@@ -12,6 +12,8 @@ const Store = {
   selectedSize: null,
   qty: 1,
   currentProduct: null,
+  slideIdx: 0,
+  _hsT: null,
 
   async load() {
     this.products = await API.get('/api/products');
@@ -28,22 +30,10 @@ const Store = {
   render() {
     const app = document.getElementById('app');
     const filtered = this.filteredProducts();
+    const slides = (this.settings && this.settings.hero_slides && this.settings.hero_slides.length) ? this.settings.hero_slides : null;
 
     app.innerHTML = `
-      <section class="hero">
-        <div class="hero-inner">
-          <div>
-            <h1>Moda urbana con <em>inventario en tiempo real</em></h1>
-            <p>Elige tu talla, agrega al carrito y finaliza tu compra. El stock se descuenta automáticamente al confirmar el pedido.</p>
-            <div class="hero-badges">
-              <div class="hero-badge"><i class="fa-solid fa-truck-fast"></i> Envío y retiro en tienda</div>
-              <div class="hero-badge"><i class="fa-solid fa-arrows-rotate"></i> Devoluciones fáciles</div>
-              <div class="hero-badge today"><i class="fa-solid fa-boxes-stacked"></i> Stock sincronizado</div>
-            </div>
-          </div>
-          <div class="hero-art">🛍️</div>
-        </div>
-      </section>
+      ${slides ? this.heroSliderHTML(slides) : this.heroDefaultHTML()}
       <div class="container">
         <div class="toolbar">
           <div class="search-box grow">
@@ -101,7 +91,83 @@ const Store = {
     app.querySelectorAll('[data-open-product]').forEach(el => {
       el.addEventListener('click', () => this.openProduct(Number(el.dataset.openProduct)));
     });
+    if (slides) this.heroBind();
     this.updateCartUI();
+  },
+
+  heroDefaultHTML() {
+    return `
+      <section class="hero">
+        <div class="hero-inner">
+          <div>
+            <h1>Moda urbana con <em>inventario en tiempo real</em></h1>
+            <p>Elige tu talla, agrega al carrito y finaliza tu compra. El stock se descuenta automáticamente al confirmar el pedido.</p>
+            <div class="hero-badges">
+              <div class="hero-badge"><i class="fa-solid fa-truck-fast"></i> Envío y retiro en tienda</div>
+              <div class="hero-badge"><i class="fa-solid fa-arrows-rotate"></i> Devoluciones fáciles</div>
+              <div class="hero-badge today"><i class="fa-solid fa-boxes-stacked"></i> Stock sincronizado</div>
+            </div>
+          </div>
+          <div class="hero-art">🛍️</div>
+        </div>
+      </section>
+    `;
+  },
+
+  heroSliderHTML(slides) {
+    const total = slides.length;
+    return `
+      <section class="hero hero-slider" id="heroSlider">
+        <div class="hero-track">
+          ${slides.map((s, i) => `
+            <div class="hero-slide ${i === (this.slideIdx % total) ? 'active' : ''}" style="background-image:url('${esc(s.image)}')">
+              <div class="hero-inner hero-slide-inner">
+                <div class="hero-slide-content">
+                  ${s.tag ? `<span class="hero-tag">${esc(s.tag)}</span>` : ''}
+                  ${s.title ? `<h1>${esc(s.title)}</h1>` : ''}
+                  ${s.subtitle ? `<p>${esc(s.subtitle)}</p>` : ''}
+                  ${s.link ? `<a class="hero-cta" href="${esc(s.link)}" target="_blank" rel="noopener">Ver más <i class="fa-solid fa-arrow-right"></i></a>` : `<button class="hero-cta" data-open-drawer>Explorar la tienda <i class="fa-solid fa-arrow-right"></i></button>`}
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>
+        ${total > 1 ? `
+          <button class="hero-arrow left" data-hero-prev><i class="fa-solid fa-chevron-left"></i></button>
+          <button class="hero-arrow right" data-hero-next><i class="fa-solid fa-chevron-right"></i></button>
+          <div class="hero-dots">${slides.map((s, i) => `<button class="hero-dot ${i === (this.slideIdx % total) ? 'active' : ''}" data-dot="${i}"></button>`).join('')}</div>
+          <div class="hero-count">${(this.slideIdx % total) + 1} / ${total}</div>` : ''}
+      </section>
+    `;
+  },
+
+  heroBind() {
+    const slider = document.getElementById('heroSlider');
+    if (!slider) return;
+    const slides = slider.querySelectorAll('.hero-slide');
+    const total = slides.length;
+    if (!total) return;
+    let idx = ((this.slideIdx || 0) % total + total) % total;
+    const go = i => {
+      idx = ((i % total) + total) % total;
+      this.slideIdx = idx;
+      slides.forEach((s, k) => s.classList.toggle('active', k === idx));
+      slider.querySelectorAll('.hero-dot').forEach((d, k) => d.classList.toggle('active', k === idx));
+      const c = slider.querySelector('.hero-count');
+      if (c) c.textContent = (idx + 1) + ' / ' + total;
+    };
+    const next = () => go(idx + 1);
+    const restart = () => {
+      if (this._hsT) clearInterval(this._hsT);
+      if (total > 1) this._hsT = setInterval(next, 5000);
+    };
+    slider.querySelectorAll('[data-hero-next]').forEach(b => b.addEventListener('click', () => { go(idx + 1); restart(); }));
+    slider.querySelectorAll('[data-hero-prev]').forEach(b => b.addEventListener('click', () => { go(idx - 1); restart(); }));
+    slider.querySelectorAll('.hero-dot').forEach(d => d.addEventListener('click', () => { go(Number(d.dataset.dot)); restart(); }));
+    slider.querySelectorAll('[data-open-drawer]').forEach(b => b.addEventListener('click', () => this.openCart()));
+    if (this._hsT) clearInterval(this._hsT);
+    if (total > 1) this._hsT = setInterval(next, 5000);
+    slider.addEventListener('mouseenter', () => { if (this._hsT) clearInterval(this._hsT); });
+    slider.addEventListener('mouseleave', () => { if (total > 1) this._hsT = setInterval(next, 5000); });
   },
 
   persistCart() {

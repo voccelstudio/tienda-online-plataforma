@@ -25,7 +25,8 @@ const DEFAULT_SETTINGS = {
   qr_info: '',
   pickup_points: [{ name: 'Tienda VOCCEL', address: '', hours: '' }],
   pickup_slots: ['09:00 - 12:00', '14:00 - 17:00', '17:00 - 19:00'],
-  pending_expire_days: 0
+  pending_expire_days: 0,
+  hero_slides: []
 };
 
 function getSettings() {
