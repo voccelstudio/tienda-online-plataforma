@@ -558,6 +558,7 @@ app.get('/api/reports/sales', (req, res) => {
   } else {
     rows = db.prepare(`
       SELECT si.product_name AS label,
+             MAX(si.product_id) AS id,
              SUM(si.quantity) AS units,
              SUM(si.quantity * si.unit_price) AS revenue
       FROM sale_items si JOIN sales s ON s.id = si.sale_id

@@ -506,7 +506,7 @@ const IMAGE_BY_NAME = {
         for (const it of items) {
           const prod = db.products.find(p => p.id === it.product_id);
           const label = group === 'category' ? (prod ? prod.category : it.product_name) : it.product_name;
-          map[label] = map[label] || { label, units: 0, revenue: 0 };
+          map[label] = map[label] || { label, units: 0, revenue: 0, id: group === 'product' && prod ? prod.id : null };
           map[label].units += it.quantity;
           map[label].revenue += it.quantity * it.unit_price;
         }

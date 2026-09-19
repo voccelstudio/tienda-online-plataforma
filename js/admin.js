@@ -334,7 +334,9 @@ const Admin = {
 
   openProductAdmin(id, mode) {
     const p = id ? this.inventory.find(x => x.id === id) : null;
-    this.editingProduct = p ? { ...p, sizes: (p.sizes || []).map(s => ({ ...s })) } : { name: '', description: '', category: 'Camisetas', list_price: '', discount: 0, image: '', active: true, sizes: [{ size: 'S', stock: 0 }, { size: 'M', stock: 0 }, { size: 'L', stock: 0 }, { size: 'XL', stock: 0 }] };
+    if (!(this.editingProduct && this.editingProduct.id === id)) {
+      this.editingProduct = p ? { ...p, id: p.id, sizes: (p.sizes || []).map(s => ({ ...s })) } : { name: '', description: '', category: 'Camisetas', list_price: '', discount: 0, image: '', active: true, sizes: [{ size: 'S', stock: 0 }, { size: 'M', stock: 0 }, { size: 'L', stock: 0 }, { size: 'XL', stock: 0 }] };
+    }
     const overlay = document.getElementById('prodAdminModal');
     const box = document.getElementById('prodAdminModalBox');
     overlay.hidden = false;
@@ -348,6 +350,12 @@ const Admin = {
           <h2>${p ? 'Editar producto' : 'Nuevo producto'}</h2>
           <button class="modal-close" id="paClose"><i class="fa-solid fa-xmark"></i></button>
         </div>
+        ${p ? `
+        <div class="prod-tabs">
+          <button class="prod-tab ${mode === 'form' ? 'active' : ''}" data-pmode="form"><i class="fa-solid fa-tag"></i> Datos y descuento</button>
+          <button class="prod-tab ${mode === 'stock' ? 'active' : ''}" data-pmode="stock"><i class="fa-solid fa-boxes-stacked"></i> Stock por talla</button>
+          <span class="prod-tab-hint">${p.active ? '<span class="ok" style="font-size:.78rem">● Visible en la tienda</span>' : '<span class="low" style="font-size:.78rem">● Delistado de la tienda</span>'}</span>
+        </div>` : ''}
         ${mode === 'form' ? `
           <form id="prodAdminForm" class="form-grid">
             <div class="field"><label>Nombre *</label><input name="name" value="${esc(e.name)}" required></div>
@@ -407,12 +415,13 @@ const Admin = {
       </div>
     `;
 
-    const close = () => { overlay.hidden = true; box.hidden = true; };
+    const close = () => { overlay.hidden = true; box.hidden = true; this.editingProduct = null; };
     box.querySelector('#paClose').addEventListener('click', close);
     overlay.addEventListener('click', close);
     const cancelBtn = box.querySelector('#paCancel');
     if (cancelBtn) cancelBtn.addEventListener('click', close);
     box.querySelectorAll('[data-pa-close]').forEach(b => b.addEventListener('click', close));
+    box.querySelectorAll('[data-pmode]').forEach(b => b.addEventListener('click', () => this.openProductAdmin(Number(p.id), b.dataset.pmode)));
 
     const fc = box.querySelector('#prodAdminForm');
     if (fc) {
@@ -1072,12 +1081,15 @@ document.getElementById('sAddPoint').addEventListener('click', () => { points.pu
         <div class="panel-card">
           <h3><i class="fa-solid fa-rectangle-list"></i> ${this.reportGroup === 'category' ? 'Por categoría' : 'Top productos'}</h3>
           <div class="bars">
-            ${rows.length ? rows.slice(0, 12).map((r, i) => `
+            ${rows.length ? rows.slice(0, 12).map((r, i) => {
+              const nameEl = r.id ? `<a href="javascript:;" class="report-link" data-open-product="${r.id}" title="Abrir ficha de ${esc(r.label)}">${esc(r.label)}</a>` : `<span title="${esc(r.label)}">${esc(r.label)}</span>`;
+              return `
               <div class="bar-row">
-                <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis" title="${esc(r.label)}">${esc(r.label)}</span>
+                <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis">${nameEl}</span>
                 <div class="bar-track"><div class="bar-fill" style="width:${Math.round(r.units / max * 100)}%"></div></div>
                 <span>${r.units} uds</span>
-              </div>`).join('') : '<span class="muted">Sin datos en el rango.</span>'}
+              </div>`;
+            }).join('') : '<span class="muted">Sin datos en el rango.</span>'}
           </div>
         </div>
         <div class="panel-card">
@@ -1087,7 +1099,7 @@ document.getElementById('sAddPoint').addEventListener('click', () => { points.pu
               ${rows.slice(0, 8).map((r, i) => `
                 <span style="display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;background:var(--bg);border-radius:999px;padding:6px 12px">
                   <i style="width:11px;height:11px;border-radius:3px;background:${colors[i % colors.length]};display:inline-block"></i>
-                  ${esc(r.label)} · ${Math.round(r.revenue / total * 100)}% · <span style="color:var(--muted)">${money(r.revenue)}</span>
+                  ${r.id ? `<a href="javascript:;" class="report-link" data-open-product="${r.id}" title="Abrir ficha de ${esc(r.label)}">${esc(r.label)}</a>` : esc(r.label)} · ${Math.round(r.revenue / total * 100)}% · <span style="color:var(--muted)">${money(r.revenue)}</span>
                 </span>`).join('')}
             </div>` : ''}
           <div class="chart-wrap">
@@ -1097,6 +1109,14 @@ document.getElementById('sAddPoint').addEventListener('click', () => { points.pu
       </div>
     `;
     this.drawPie(rows.slice(0, 8), colors);
+    el.querySelectorAll('[data-open-product]').forEach(a => {
+      a.addEventListener('click', () => {
+        const id = Number(a.dataset.openProduct);
+        const exists = this.inventory.some(p => p.id === id);
+        if (!exists) { toast('Ese producto ya no existe en el inventario', 'warn'); return; }
+        this.openProductAdmin(id, 'form');
+      });
+    });
   },
 
   drawPie(rows, colors) {
